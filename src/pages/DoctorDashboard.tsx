@@ -1,229 +1,193 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast";
 import Navigation from "@/components/Navigation";
-import {
-  Calendar,
+import { 
+  Calendar as CalendarIcon, 
+  Users, 
+  FileText, 
+  Search, 
+  User,
   Clock,
-  FileText,
-  Users,
-  Stethoscope,
-  Plus,
-  Eye,
-  Upload,
-  Search,
-  Edit,
-  Check,
-  X,
-  AlertCircle,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const DoctorDashboard = () => {
   const { toast } = useToast();
-  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+
+  // Mock appointments data with management capabilities
   const [appointments, setAppointments] = useState([
     {
       id: 1,
-      patient: "John Doe",
-      patientId: "P001",
+      patientName: "John Doe",
+      patientEmail: "john.doe@email.com",
+      date: "2024-01-20",
       time: "10:00 AM",
-      type: "Follow-up",
-      status: "confirmed",
-      hasAccess: true,
-      notes: "Regular checkup for hypertension management",
+      status: "pending",
+      reason: "Regular checkup",
+      notes: ""
     },
     {
       id: 2,
-      patient: "Jane Smith",
-      patientId: "P002",
-      time: "11:30 AM",
-      type: "Consultation",
-      status: "confirmed",
-      hasAccess: false,
-      notes: "Initial consultation for chest pain",
+      patientName: "Jane Smith",
+      patientEmail: "jane.smith@email.com",
+      date: "2024-01-22",
+      time: "2:30 PM",
+      status: "approved",
+      reason: "Follow-up consultation",
+      notes: "Patient recovering well"
     },
     {
       id: 3,
-      patient: "Robert Johnson",
-      patientId: "P003",
-      time: "2:00 PM",
-      type: "Check-up",
+      patientName: "Bob Johnson",
+      patientEmail: "bob.johnson@email.com",
+      date: "2024-01-25",
+      time: "11:15 AM",
       status: "pending",
-      hasAccess: true,
-      notes: "Diabetes management follow-up",
-    },
+      reason: "Initial consultation",
+      notes: ""
+    }
   ]);
 
-  const [patientRecords, setPatientRecords] = useState([
+  const [patients] = useState([
     {
       id: 1,
-      patientId: "P001",
       name: "John Doe",
-      lastVisit: "2024-01-10",
-      condition: "Hypertension",
-      hasAccess: true,
-      age: 45,
+      email: "john.doe@email.com",
+      phone: "+1 (555) 123-4567",
+      dateOfBirth: "1985-03-15",
       bloodType: "O+",
-      allergies: "None known",
-      currentMedications: ["Lisinopril 10mg"],
+      allergies: "Penicillin",
+      hasAccess: true,
+      lastVisit: "2024-01-15"
     },
     {
       id: 2,
-      patientId: "P003",
-      name: "Robert Johnson",
-      lastVisit: "2024-01-08",
-      condition: "Diabetes Type 2",
+      name: "Jane Smith",
+      email: "jane.smith@email.com",
+      phone: "+1 (555) 987-6543",
+      dateOfBirth: "1990-07-22",
+      bloodType: "A-",
+      allergies: "None",
       hasAccess: true,
-      age: 52,
-      bloodType: "A+",
-      allergies: "Penicillin",
-      currentMedications: ["Metformin 500mg", "Insulin"],
-    },
+      lastVisit: "2024-01-10"
+    }
   ]);
 
   const [prescriptions, setPrescriptions] = useState([
     {
       id: 1,
-      patientId: "P001",
-      patient: "John Doe",
-      medication: "Lisinopril 10mg",
-      dosage: "Once daily",
-      instructions: "Take with food in the morning",
-      status: "active",
-      date: "2024-01-12",
-      duration: "30 days",
-    },
-    {
-      id: 2,
-      patientId: "P003",
-      patient: "Robert Johnson",
-      medication: "Metformin 500mg",
-      dosage: "Twice daily",
-      instructions: "Take before meals",
-      status: "active",
-      date: "2024-01-11",
-      duration: "90 days",
-    },
+      patientName: "John Doe",
+      medication: "Amoxicillin 500mg",
+      dosage: "3 times daily",
+      duration: "7 days",
+      date: "2024-01-15",
+      status: "active"
+    }
   ]);
 
-  const [prescriptionForm, setPrescriptionForm] = useState({
+  const [newPrescription, setNewPrescription] = useState({
     patientId: "",
     medication: "",
     dosage: "",
-    instructions: "",
     duration: "",
+    instructions: ""
   });
 
-  const [appointmentNotes, setAppointmentNotes] = useState({});
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showPrescriptionForm, setShowPrescriptionForm] = useState(false);
-  const [showPatientDetails, setShowPatientDetails] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState(null);
-
-  const filteredPatients = patientRecords.filter(patient =>
-    patient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    patient.patientId.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const todaysStats = {
-    totalAppointments: appointments.length,
-    confirmedAppointments: appointments.filter(apt => apt.status === "confirmed").length,
-    pendingAppointments: appointments.filter(apt => apt.status === "pending").length,
-    accessibleRecords: patientRecords.length,
-    activePrescriptions: prescriptions.filter(p => p.status === "active").length,
+  const updateAppointmentStatus = (appointmentId: number, newStatus: string) => {
+    setAppointments(appointments.map(apt => 
+      apt.id === appointmentId 
+        ? { ...apt, status: newStatus }
+        : apt
+    ));
+    toast({
+      title: "Appointment Updated",
+      description: `Appointment has been ${newStatus}`,
+    });
   };
 
-  const handleCreatePrescription = () => {
-    if (!prescriptionForm.patientId || !prescriptionForm.medication || !prescriptionForm.dosage) {
+  const rescheduleAppointment = (appointmentId: number) => {
+    // In a real app, this would open a modal or form for rescheduling
+    toast({
+      title: "Reschedule Request",
+      description: "Rescheduling functionality would be implemented here",
+    });
+  };
+
+  const addPrescription = () => {
+    if (!newPrescription.patientId || !newPrescription.medication) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields.",
+        title: "Error",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
     }
 
-    const patient = patientRecords.find(p => p.patientId === prescriptionForm.patientId);
-    if (!patient) {
+    const patient = patients.find(p => p.id.toString() === newPrescription.patientId);
+    if (!patient?.hasAccess) {
       toast({
-        title: "Patient Not Found",
-        description: "Selected patient not found or no access granted.",
+        title: "Access Denied",
+        description: "Patient has not granted you access to their medical records",
         variant: "destructive",
       });
       return;
     }
 
-    const newPrescription = {
+    const prescription = {
       id: prescriptions.length + 1,
-      patientId: prescriptionForm.patientId,
-      patient: patient.name,
-      medication: prescriptionForm.medication,
-      dosage: prescriptionForm.dosage,
-      instructions: prescriptionForm.instructions,
-      duration: prescriptionForm.duration,
-      status: "active",
+      patientName: patient.name,
+      medication: newPrescription.medication,
+      dosage: newPrescription.dosage,
+      duration: newPrescription.duration,
       date: new Date().toISOString().split('T')[0],
+      status: "active"
     };
 
-    setPrescriptions([...prescriptions, newPrescription]);
-    setPrescriptionForm({
+    setPrescriptions([...prescriptions, prescription]);
+    setNewPrescription({
       patientId: "",
       medication: "",
       dosage: "",
-      instructions: "",
       duration: "",
+      instructions: ""
     });
-    setShowPrescriptionForm(false);
 
     toast({
-      title: "Prescription Created",
-      description: `Prescription for ${patient.name} has been created successfully.`,
+      title: "Prescription Added",
+      description: "Prescription has been successfully added to patient's records",
     });
   };
 
-  const handleAppointmentStatusUpdate = (appointmentId: number, newStatus: string) => {
-    setAppointments(appointments.map(apt =>
-      apt.id === appointmentId ? { ...apt, status: newStatus } : apt
-    ));
+  const filteredPatients = patients.filter(patient => 
+    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    patient.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-    toast({
-      title: "Appointment Updated",
-      description: `Appointment status changed to ${newStatus}.`,
-    });
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "approved": return "bg-green-500";
+      case "pending": return "bg-yellow-500";
+      case "canceled": return "bg-red-500";
+      default: return "bg-gray-500";
+    }
   };
 
-  const handleAddAppointmentNotes = (appointmentId: number, notes: string) => {
-    setAppointmentNotes({ ...appointmentNotes, [appointmentId]: notes });
-    toast({
-      title: "Notes Saved",
-      description: "Appointment notes have been saved.",
-    });
-  };
-
-  const handleViewPatientDetails = (patient: any) => {
-    setSelectedPatient(patient);
-    setShowPatientDetails(true);
-  };
-
-  const handleRevokePrescription = (prescriptionId: number) => {
-    setPrescriptions(prescriptions.map(p =>
-      p.id === prescriptionId ? { ...p, status: "revoked" } : p
-    ));
-
-    toast({
-      title: "Prescription Revoked",
-      description: "Prescription has been revoked successfully.",
-    });
+  const stats = {
+    totalPatients: patients.length,
+    todayAppointments: appointments.filter(apt => apt.date === new Date().toISOString().split('T')[0]).length,
+    pendingAppointments: appointments.filter(apt => apt.status === "pending").length,
+    activePrescriptions: prescriptions.filter(p => p.status === "active").length
   };
 
   return (
@@ -233,179 +197,77 @@ const DoctorDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-healthcare-text-primary">
-                Doctor Dashboard
-              </h1>
-              <p className="text-healthcare-text-secondary mt-1">
-                Welcome back, Dr. Sarah Smith - Cardiology
-              </p>
-            </div>
-            <Dialog open={showPrescriptionForm} onOpenChange={setShowPrescriptionForm}>
-              <DialogTrigger asChild>
-                <Button className="bg-healthcare-green hover:bg-healthcare-green/90">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Prescription
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>Create New Prescription</DialogTitle>
-                  <DialogDescription>
-                    Create a new prescription for an authorized patient.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="patient-select">Patient</Label>
-                    <Select
-                      value={prescriptionForm.patientId}
-                      onValueChange={(value) => setPrescriptionForm({...prescriptionForm, patientId: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select patient..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {patientRecords.map((patient) => (
-                          <SelectItem key={patient.patientId} value={patient.patientId}>
-                            {patient.name} ({patient.patientId})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="medication">Medication</Label>
-                    <Input
-                      id="medication"
-                      value={prescriptionForm.medication}
-                      onChange={(e) => setPrescriptionForm({...prescriptionForm, medication: e.target.value})}
-                      placeholder="e.g., Lisinopril 10mg"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dosage">Dosage</Label>
-                    <Input
-                      id="dosage"
-                      value={prescriptionForm.dosage}
-                      onChange={(e) => setPrescriptionForm({...prescriptionForm, dosage: e.target.value})}
-                      placeholder="e.g., Once daily"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="duration">Duration</Label>
-                    <Input
-                      id="duration"
-                      value={prescriptionForm.duration}
-                      onChange={(e) => setPrescriptionForm({...prescriptionForm, duration: e.target.value})}
-                      placeholder="e.g., 30 days"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="instructions">Instructions</Label>
-                    <Textarea
-                      id="instructions"
-                      value={prescriptionForm.instructions}
-                      onChange={(e) => setPrescriptionForm({...prescriptionForm, instructions: e.target.value})}
-                      placeholder="Special instructions and notes..."
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setShowPrescriptionForm(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreatePrescription}>
-                    Create Prescription
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <h1 className="text-3xl font-bold text-healthcare-text-primary">
+            Doctor Dashboard
+          </h1>
+          <p className="text-healthcare-text-secondary mt-1">
+            Welcome back, Dr. Sarah Smith
+          </p>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center">
-                <Calendar className="h-8 w-8 text-healthcare-blue" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-healthcare-text-secondary">Today's Appointments</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{todaysStats.totalAppointments}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Total Patients</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.totalPatients}</p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Check className="h-8 w-8 text-healthcare-green" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-healthcare-text-secondary">Confirmed</p>
-                  <p className="text-2xl font-bold text-healthcare-green">{todaysStats.confirmedAppointments}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Clock className="h-8 w-8 text-yellow-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-healthcare-text-secondary">Pending</p>
-                  <p className="text-2xl font-bold text-yellow-500">{todaysStats.pendingAppointments}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
                 <Users className="h-8 w-8 text-healthcare-blue" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-healthcare-text-secondary">Accessible Records</p>
-                  <p className="text-2xl font-bold text-healthcare-blue">{todaysStats.accessibleRecords}</p>
-                </div>
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center">
-                <Stethoscope className="h-8 w-8 text-healthcare-green" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-healthcare-text-secondary">Active Prescriptions</p>
-                  <p className="text-2xl font-bold text-healthcare-green">{todaysStats.activePrescriptions}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Today's Appointments</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.todayAppointments}</p>
                 </div>
+                <CalendarIcon className="h-8 w-8 text-healthcare-green" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Pending Approvals</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.pendingAppointments}</p>
+                </div>
+                <Clock className="h-8 w-8 text-yellow-500" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Active Prescriptions</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.activePrescriptions}</p>
+                </div>
+                <FileText className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
         </div>
 
+        {/* Main Content */}
         <Tabs defaultValue="appointments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="appointments">Today's Appointments</TabsTrigger>
-            <TabsTrigger value="patients">Patient Records</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="appointments">Appointments</TabsTrigger>
+            <TabsTrigger value="patients">Patients</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
-            <TabsTrigger value="schedule">Schedule</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="appointments" className="space-y-6">
+          {/* Appointments Tab */}
+          <TabsContent value="appointments">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Calendar className="h-5 w-5 text-healthcare-blue" />
-                  <span>Today's Appointments</span>
-                </CardTitle>
+                <CardTitle>Appointment Management</CardTitle>
                 <CardDescription>
-                  Manage your appointments for today
+                  Manage your appointments - approve, reschedule, or cancel
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -413,9 +275,9 @@ const DoctorDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Patient</TableHead>
+                      <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Access</TableHead>
+                      <TableHead>Reason</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -423,29 +285,12 @@ const DoctorDashboard = () => {
                   <TableBody>
                     {appointments.map((appointment) => (
                       <TableRow key={appointment.id}>
-                        <TableCell className="font-medium">
-                          <div>
-                            <p>{appointment.patient}</p>
-                            <p className="text-sm text-healthcare-text-secondary">ID: {appointment.patientId}</p>
-                          </div>
-                        </TableCell>
+                        <TableCell className="font-medium">{appointment.patientName}</TableCell>
+                        <TableCell>{appointment.date}</TableCell>
                         <TableCell>{appointment.time}</TableCell>
-                        <TableCell>{appointment.type}</TableCell>
+                        <TableCell>{appointment.reason}</TableCell>
                         <TableCell>
-                          {appointment.hasAccess ? (
-                            <Badge className="bg-healthcare-green">Has Access</Badge>
-                          ) : (
-                            <Badge variant="secondary">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              No Access
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={appointment.status === "confirmed" ? "default" : "secondary"}
-                            className={appointment.status === "confirmed" ? "bg-healthcare-blue" : "bg-yellow-500"}
-                          >
+                          <Badge className={getStatusColor(appointment.status)}>
                             {appointment.status}
                           </Badge>
                         </TableCell>
@@ -455,32 +300,41 @@ const DoctorDashboard = () => {
                               <>
                                 <Button
                                   size="sm"
-                                  onClick={() => handleAppointmentStatusUpdate(appointment.id, "confirmed")}
+                                  onClick={() => updateAppointmentStatus(appointment.id, "approved")}
+                                  className="bg-green-500 hover:bg-green-600"
                                 >
-                                  <Check className="h-4 w-4 mr-1" />
-                                  Confirm
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Approve
                                 </Button>
                                 <Button
-                                  variant="outline"
                                   size="sm"
-                                  onClick={() => handleAppointmentStatusUpdate(appointment.id, "cancelled")}
+                                  variant="destructive"
+                                  onClick={() => updateAppointmentStatus(appointment.id, "canceled")}
                                 >
-                                  <X className="h-4 w-4 mr-1" />
+                                  <XCircle className="h-4 w-4 mr-1" />
                                   Cancel
                                 </Button>
                               </>
                             )}
-                            {appointment.hasAccess && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewPatientDetails(
-                                  patientRecords.find(p => p.patientId === appointment.patientId)
-                                )}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View Records
-                              </Button>
+                            {appointment.status === "approved" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => rescheduleAppointment(appointment.id)}
+                                >
+                                  <Clock className="h-4 w-4 mr-1" />
+                                  Reschedule
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => updateAppointmentStatus(appointment.id, "canceled")}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Cancel
+                                </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -492,15 +346,13 @@ const DoctorDashboard = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="patients" className="space-y-6">
+          {/* Patients Tab */}
+          <TabsContent value="patients">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Users className="h-5 w-5 text-healthcare-blue" />
-                  <span>Patient Records</span>
-                </CardTitle>
+                <CardTitle>Patient Records</CardTitle>
                 <CardDescription>
-                  Patients who have granted you access to their records
+                  Access patient information (only those who granted you access)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -508,218 +360,158 @@ const DoctorDashboard = () => {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-healthcare-text-secondary h-4 w-4" />
                     <Input
-                      placeholder="Search patient records..."
+                      placeholder="Search patients..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Last Visit</TableHead>
-                      <TableHead>Primary Condition</TableHead>
-                      <TableHead>Blood Type</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredPatients.map((patient) => (
-                      <TableRow key={patient.id}>
-                        <TableCell className="font-medium">
-                          <div>
-                            <p>{patient.name}</p>
-                            <p className="text-sm text-healthcare-text-secondary">
-                              ID: {patient.patientId} • Age: {patient.age}
-                            </p>
+                <div className="space-y-4">
+                  {filteredPatients.map((patient) => (
+                    <div
+                      key={patient.id}
+                      className={`p-4 border rounded-lg ${
+                        patient.hasAccess ? 'border-healthcare-blue bg-healthcare-blue-light' : 'border-red-300 bg-red-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="bg-white rounded-full p-2">
+                            <User className="h-6 w-6 text-healthcare-blue" />
                           </div>
-                        </TableCell>
-                        <TableCell>{patient.lastVisit}</TableCell>
-                        <TableCell>{patient.condition}</TableCell>
-                        <TableCell>{patient.bloodType}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewPatientDetails(patient)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View Details
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="prescriptions" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Stethoscope className="h-5 w-5 text-healthcare-green" />
-                  <span>Prescription Management</span>
-                </CardTitle>
-                <CardDescription>
-                  Manage and track patient prescriptions
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Medication</TableHead>
-                      <TableHead>Dosage</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {prescriptions.map((prescription) => (
-                      <TableRow key={prescription.id}>
-                        <TableCell className="font-medium">
                           <div>
-                            <p>{prescription.patient}</p>
+                            <h4 className="font-medium text-healthcare-text-primary">
+                              {patient.name}
+                            </h4>
                             <p className="text-sm text-healthcare-text-secondary">
-                              ID: {prescription.patientId}
+                              {patient.email} • Last visit: {patient.lastVisit}
                             </p>
+                            {patient.hasAccess && (
+                              <p className="text-sm text-healthcare-text-secondary">
+                                Blood Type: {patient.bloodType} • Allergies: {patient.allergies}
+                              </p>
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>{prescription.medication}</TableCell>
-                        <TableCell>{prescription.dosage}</TableCell>
-                        <TableCell>{prescription.duration}</TableCell>
-                        <TableCell>
+                        </div>
+                        <div className="flex items-center space-x-2">
                           <Badge
-                            className={
-                              prescription.status === "active"
-                                ? "bg-healthcare-green"
-                                : prescription.status === "revoked"
-                                ? "bg-red-500"
-                                : "bg-gray-500"
-                            }
+                            variant={patient.hasAccess ? "default" : "secondary"}
+                            className={patient.hasAccess ? "bg-healthcare-green" : "bg-red-500"}
                           >
-                            {prescription.status}
+                            {patient.hasAccess ? "Access Granted" : "Access Denied"}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {prescription.status === "active" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRevokePrescription(prescription.id)}
-                            >
-                              <X className="h-4 w-4 mr-1" />
-                              Revoke
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="schedule" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Weekly Schedule Overview</CardTitle>
-                <CardDescription>
-                  Your upcoming appointments and availability
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Calendar className="h-16 w-16 text-healthcare-text-secondary mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-healthcare-text-primary mb-2">
-                    Schedule Management
-                  </h3>
-                  <p className="text-healthcare-text-secondary mb-4">
-                    Advanced scheduling features will be available here
-                  </p>
-                  <Button variant="outline">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Manage Schedule
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        {/* Patient Details Modal */}
-        {selectedPatient && (
-          <Dialog open={showPatientDetails} onOpenChange={setShowPatientDetails}>
-            <DialogContent className="sm:max-w-[600px]">
-              <DialogHeader>
-                <DialogTitle>Patient Details: {selectedPatient.name}</DialogTitle>
-                <DialogDescription>
-                  Comprehensive patient information and medical history
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm font-medium">Patient ID</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.patientId}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Age</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.age} years</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Blood Type</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.bloodType}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Last Visit</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.lastVisit}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm font-medium">Primary Condition</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.condition}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Known Allergies</Label>
-                      <p className="text-sm text-healthcare-text-secondary">{selectedPatient.allergies}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Current Medications</Label>
-                      <div className="space-y-1">
-                        {selectedPatient.currentMedications.map((med, index) => (
-                          <p key={index} className="text-sm text-healthcare-text-secondary">• {med}</p>
-                        ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setShowPatientDetails(false)}>
-                  Close
-                </Button>
-                <Button onClick={() => {
-                  setPrescriptionForm({...prescriptionForm, patientId: selectedPatient.patientId});
-                  setShowPatientDetails(false);
-                  setShowPrescriptionForm(true);
-                }}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Prescription
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Prescriptions Tab */}
+          <TabsContent value="prescriptions">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Add Prescription */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Add New Prescription</CardTitle>
+                  <CardDescription>
+                    Create a prescription for your patients
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Patient</label>
+                    <select
+                      value={newPrescription.patientId}
+                      onChange={(e) => setNewPrescription({...newPrescription, patientId: e.target.value})}
+                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
+                    >
+                      <option value="">Select a patient</option>
+                      {patients.filter(p => p.hasAccess).map(patient => (
+                        <option key={patient.id} value={patient.id}>{patient.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Medication</label>
+                    <Input
+                      value={newPrescription.medication}
+                      onChange={(e) => setNewPrescription({...newPrescription, medication: e.target.value})}
+                      placeholder="e.g., Amoxicillin 500mg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Dosage</label>
+                    <Input
+                      value={newPrescription.dosage}
+                      onChange={(e) => setNewPrescription({...newPrescription, dosage: e.target.value})}
+                      placeholder="e.g., 3 times daily"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Duration</label>
+                    <Input
+                      value={newPrescription.duration}
+                      onChange={(e) => setNewPrescription({...newPrescription, duration: e.target.value})}
+                      placeholder="e.g., 7 days"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Instructions</label>
+                    <Textarea
+                      value={newPrescription.instructions}
+                      onChange={(e) => setNewPrescription({...newPrescription, instructions: e.target.value})}
+                      placeholder="Additional instructions..."
+                    />
+                  </div>
+                  <Button onClick={addPrescription} className="w-full">
+                    Add Prescription
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Recent Prescriptions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Prescriptions</CardTitle>
+                  <CardDescription>
+                    Your recently added prescriptions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {prescriptions.map((prescription) => (
+                      <div
+                        key={prescription.id}
+                        className="p-4 border border-healthcare-gray rounded-lg"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium text-healthcare-text-primary">
+                              {prescription.patientName}
+                            </h4>
+                            <p className="text-sm text-healthcare-text-secondary">
+                              {prescription.medication} - {prescription.dosage}
+                            </p>
+                            <p className="text-sm text-healthcare-text-secondary">
+                              Duration: {prescription.duration} • Date: {prescription.date}
+                            </p>
+                          </div>
+                          <Badge className="bg-healthcare-green">
+                            {prescription.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
