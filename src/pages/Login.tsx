@@ -1,39 +1,98 @@
 
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
 import Navigation from "@/components/Navigation";
 import { Shield, User, Stethoscope, Settings } from "lucide-react";
 
 const Login = () => {
-  const [patientForm, setPatientForm] = useState({ email: "", password: "" });
-  const [doctorForm, setDoctorForm] = useState({ email: "", password: "" });
-  const [adminForm, setAdminForm] = useState({ email: "", password: "" });
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { signIn, user, loading } = useAuth();
+  const { data: profile } = useProfile();
 
-  const handlePatientLogin = (e: React.FormEvent) => {
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Redirect authenticated users to appropriate dashboard
+  useEffect(() => {
+    if (user && profile && !loading) {
+      console.log('Redirecting user with role:', profile.role);
+      switch (profile.role) {
+        case 'patient':
+          navigate('/patient-dashboard');
+          break;
+        case 'doctor':
+          navigate('/doctor-dashboard');
+          break;
+        case 'admin':
+          navigate('/admin-dashboard');
+          break;
+        default:
+          navigate('/');
+      }
+    }
+  }, [user, profile, loading, navigate]);
+
+  const handleLogin = async (e: React.FormEvent, userType: string) => {
     e.preventDefault();
-    console.log("Patient login:", patientForm);
-    // In a real app, this would authenticate and redirect to patient dashboard
-    window.location.href = "/patient-dashboard";
+    
+    if (!loginForm.email || !loginForm.password) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signIn(loginForm.email, loginForm.password);
+
+      if (error) {
+        console.error('Login error:', error);
+        toast({
+          title: "Login Failed",
+          description: error.message || "Invalid email or password",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Success!",
+          description: `Welcome back! Redirecting to your ${userType} dashboard...`,
+        });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDoctorLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log("Doctor login:", doctorForm);
-    // In a real app, this would authenticate and redirect to doctor dashboard
-    window.location.href = "/doctor-dashboard";
-  };
-
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log("Admin login:", adminForm);
-    // In a real app, this would authenticate and redirect to admin dashboard
-    window.location.href = "/admin-dashboard";
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-healthcare-gray flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-healthcare-blue mx-auto mb-4"></div>
+          <p className="text-healthcare-text-secondary">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-healthcare-gray">
@@ -82,15 +141,15 @@ const Login = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handlePatientLogin} className="space-y-4">
+                  <form onSubmit={(e) => handleLogin(e, 'patient')} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="patient-email">Email Address</Label>
                       <Input
                         id="patient-email"
                         type="email"
                         placeholder="Enter your email"
-                        value={patientForm.email}
-                        onChange={(e) => setPatientForm({...patientForm, email: e.target.value})}
+                        value={loginForm.email}
+                        onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                         required
                       />
                     </div>
@@ -100,13 +159,17 @@ const Login = () => {
                         id="patient-password"
                         type="password"
                         placeholder="Enter your password"
-                        value={patientForm.password}
-                        onChange={(e) => setPatientForm({...patientForm, password: e.target.value})}
+                        value={loginForm.password}
+                        onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90">
-                      Sign In as Patient
+                    <Button 
+                      type="submit" 
+                      className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90"
+                      disabled={isSubmitting || loading}
+                    >
+                      {isSubmitting ? "Signing In..." : "Sign In as Patient"}
                     </Button>
                   </form>
                 </CardContent>
@@ -126,15 +189,15 @@ const Login = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleDoctorLogin} className="space-y-4">
+                  <form onSubmit={(e) => handleLogin(e, 'doctor')} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="doctor-email">Email Address</Label>
                       <Input
                         id="doctor-email"
                         type="email"
                         placeholder="Enter your email"
-                        value={doctorForm.email}
-                        onChange={(e) => setDoctorForm({...doctorForm, email: e.target.value})}
+                        value={loginForm.email}
+                        onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                         required
                       />
                     </div>
@@ -144,13 +207,17 @@ const Login = () => {
                         id="doctor-password"
                         type="password"
                         placeholder="Enter your password"
-                        value={doctorForm.password}
-                        onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})}
+                        value={loginForm.password}
+                        onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-healthcare-green hover:bg-healthcare-green/90">
-                      Sign In as Doctor
+                    <Button 
+                      type="submit" 
+                      className="w-full bg-healthcare-green hover:bg-healthcare-green/90"
+                      disabled={isSubmitting || loading}
+                    >
+                      {isSubmitting ? "Signing In..." : "Sign In as Doctor"}
                     </Button>
                   </form>
                 </CardContent>
@@ -170,15 +237,15 @@ const Login = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleAdminLogin} className="space-y-4">
+                  <form onSubmit={(e) => handleLogin(e, 'admin')} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="admin-email">Email Address</Label>
                       <Input
                         id="admin-email"
                         type="email"
                         placeholder="Enter your email"
-                        value={adminForm.email}
-                        onChange={(e) => setAdminForm({...adminForm, email: e.target.value})}
+                        value={loginForm.email}
+                        onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                         required
                       />
                     </div>
@@ -188,13 +255,17 @@ const Login = () => {
                         id="admin-password"
                         type="password"
                         placeholder="Enter your password"
-                        value={adminForm.password}
-                        onChange={(e) => setAdminForm({...adminForm, password: e.target.value})}
+                        value={loginForm.password}
+                        onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-healthcare-text-primary hover:bg-healthcare-text-primary/90">
-                      Sign In as Admin
+                    <Button 
+                      type="submit" 
+                      className="w-full bg-healthcare-text-primary hover:bg-healthcare-text-primary/90"
+                      disabled={isSubmitting || loading}
+                    >
+                      {isSubmitting ? "Signing In..." : "Sign In as Admin"}
                     </Button>
                   </form>
                 </CardContent>

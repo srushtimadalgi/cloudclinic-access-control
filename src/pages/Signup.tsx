@@ -1,16 +1,22 @@
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import Navigation from "@/components/Navigation";
 import { Shield, User, Stethoscope } from "lucide-react";
 
 const Signup = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { signUp, loading } = useAuth();
+
   const [patientForm, setPatientForm] = useState({
     firstName: "",
     lastName: "",
@@ -31,26 +37,118 @@ const Signup = () => {
     agreeTerms: false,
   });
 
-  const handlePatientSignup = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handlePatientSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (patientForm.password !== patientForm.confirmPassword) {
-      alert("Passwords don't match!");
+      toast({
+        title: "Error",
+        description: "Passwords don't match!",
+        variant: "destructive",
+      });
       return;
     }
-    console.log("Patient signup:", patientForm);
-    // In a real app, this would create account and redirect
-    alert("Account created successfully! Please check your email to verify your account.");
+
+    if (!patientForm.agreeTerms) {
+      toast({
+        title: "Error",
+        description: "Please agree to the terms and conditions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signUp(patientForm.email, patientForm.password, {
+        firstName: patientForm.firstName,
+        lastName: patientForm.lastName,
+        role: 'patient',
+      });
+
+      if (error) {
+        toast({
+          title: "Signup Failed",
+          description: error.message || "An error occurred during signup",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to verify your account.",
+        });
+        navigate("/login");
+      }
+    } catch (error) {
+      console.error("Signup error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDoctorSignup = (e: React.FormEvent) => {
+  const handleDoctorSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (doctorForm.password !== doctorForm.confirmPassword) {
-      alert("Passwords don't match!");
+      toast({
+        title: "Error",
+        description: "Passwords don't match!",
+        variant: "destructive",
+      });
       return;
     }
-    console.log("Doctor signup:", doctorForm);
-    // In a real app, this would create account and redirect
-    alert("Doctor account submitted for verification. You'll receive an email once approved.");
+
+    if (!doctorForm.agreeTerms) {
+      toast({
+        title: "Error",
+        description: "Please agree to the terms and conditions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signUp(doctorForm.email, doctorForm.password, {
+        firstName: doctorForm.firstName,
+        lastName: doctorForm.lastName,
+        role: 'doctor',
+        licenseNumber: doctorForm.licenseNumber,
+        specialty: doctorForm.specialty,
+      });
+
+      if (error) {
+        toast({
+          title: "Signup Failed",
+          description: error.message || "An error occurred during signup",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Doctor Application Submitted!",
+          description: "Your account has been created. Please check your email and wait for verification.",
+        });
+        navigate("/login");
+      }
+    } catch (error) {
+      console.error("Signup error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -176,9 +274,9 @@ const Signup = () => {
                     <Button 
                       type="submit" 
                       className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90"
-                      disabled={!patientForm.agreeTerms}
+                      disabled={!patientForm.agreeTerms || isSubmitting || loading}
                     >
-                      Create Patient Account
+                      {isSubmitting ? "Creating Account..." : "Create Patient Account"}
                     </Button>
                   </form>
                 </CardContent>
@@ -300,9 +398,9 @@ const Signup = () => {
                     <Button 
                       type="submit" 
                       className="w-full bg-healthcare-green hover:bg-healthcare-green/90"
-                      disabled={!doctorForm.agreeTerms}
+                      disabled={!doctorForm.agreeTerms || isSubmitting || loading}
                     >
-                      Submit Doctor Application
+                      {isSubmitting ? "Submitting Application..." : "Submit Doctor Application"}
                     </Button>
                   </form>
                 </CardContent>
