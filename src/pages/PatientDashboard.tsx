@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Navigation from "@/components/Navigation";
@@ -21,12 +20,34 @@ import {
   XCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useDoctorAccess } from "@/hooks/useDoctorAccess";
+import { useProfile } from "@/hooks/useProfile";
 
 const PatientDashboard = () => {
   const { toast } = useToast();
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const { data: profile } = useProfile();
+  const { doctorAccess, toggleDoctorAccess } = useDoctorAccess();
 
-  // Updated appointments with status tracking
+  // Fetch real doctors from database
+  const { data: doctors } = useQuery({
+    queryKey: ['doctors'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('doctors')
+        .select(`
+          id,
+          specialty,
+          profiles!inner(first_name, last_name, status)
+        `)
+        .eq('profiles.status', 'active');
+
+      if (error) throw error;
+      return data;
+    }
+  });
+
   const [appointments, setAppointments] = useState([
     {
       id: 1,
@@ -47,23 +68,7 @@ const PatientDashboard = () => {
       status: "pending",
       reason: "Heart consultation",
       location: "CloudClinic Cardiology"
-    },
-    {
-      id: 3,
-      doctorName: "Dr. Sarah Smith",
-      specialty: "General Practitioner",
-      date: "2024-01-18",
-      time: "11:00 AM",
-      status: "canceled",
-      reason: "Follow-up",
-      location: "CloudClinic Main Branch"
     }
-  ]);
-
-  const [doctors] = useState([
-    { id: 1, name: "Dr. Sarah Smith", specialty: "General Practitioner", hasAccess: true },
-    { id: 2, name: "Dr. Michael Brown", specialty: "Cardiologist", hasAccess: false },
-    { id: 3, name: "Dr. Emily Johnson", specialty: "Dermatologist", hasAccess: true }
   ]);
 
   const [prescriptions] = useState([
@@ -75,15 +80,6 @@ const PatientDashboard = () => {
       date: "2024-01-15",
       duration: "7 days",
       status: "active"
-    },
-    {
-      id: 2,
-      medication: "Lisinopril 10mg",
-      dosage: "Once daily",
-      prescribedBy: "Dr. Michael Brown",
-      date: "2024-01-10",
-      duration: "30 days",
-      status: "completed"
     }
   ]);
 
@@ -95,26 +91,8 @@ const PatientDashboard = () => {
       date: "2024-01-15",
       doctor: "Dr. Sarah Smith",
       status: "completed"
-    },
-    {
-      id: 2,
-      type: "Imaging",
-      title: "Chest X-Ray",
-      date: "2024-01-10",
-      doctor: "Dr. Michael Brown",
-      status: "completed"
     }
   ]);
-
-  const [profile, setProfile] = useState({
-    name: "John Doe",
-    email: "john.doe@email.com",
-    phone: "+1 (555) 123-4567",
-    dateOfBirth: "1985-03-15",
-    bloodType: "O+",
-    allergies: "Penicillin",
-    emergencyContact: "Jane Doe - +1 (555) 987-6543"
-  });
 
   const [newAppointment, setNewAppointment] = useState({
     doctorId: "",
@@ -133,10 +111,10 @@ const PatientDashboard = () => {
       return;
     }
 
-    const doctor = doctors.find(d => d.id.toString() === newAppointment.doctorId);
+    const doctor = doctors?.find(d => d.id === newAppointment.doctorId);
     const appointment = {
       id: appointments.length + 1,
-      doctorName: doctor?.name || "",
+      doctorName: `Dr. ${doctor?.profiles.first_name} ${doctor?.profiles.last_name}` || "",
       specialty: doctor?.specialty || "",
       date: newAppointment.date,
       time: newAppointment.time,
@@ -151,14 +129,6 @@ const PatientDashboard = () => {
     toast({
       title: "Appointment Booked",
       description: "Your appointment has been submitted and is pending approval",
-    });
-  };
-
-  const toggleDoctorAccess = (doctorId: number) => {
-    // This would update the doctor access in the backend
-    toast({
-      title: "Access Updated",
-      description: "Doctor access permissions have been updated",
     });
   };
 
@@ -198,7 +168,7 @@ const PatientDashboard = () => {
             Patient Dashboard
           </h1>
           <p className="text-healthcare-text-secondary mt-1">
-            Welcome back, {profile.name}
+            Welcome back, {profile?.first_name} {profile?.last_name}
           </p>
         </div>
 
@@ -247,7 +217,7 @@ const PatientDashboard = () => {
                 <div>
                   <p className="text-sm text-healthcare-text-secondary">Doctors Access</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {doctors.filter(d => d.hasAccess).length}
+                    {doctorAccess.filter(d => d.hasAccess).length}
                   </p>
                 </div>
                 <Shield className="h-8 w-8 text-healthcare-blue" />
@@ -285,9 +255,9 @@ const PatientDashboard = () => {
                       className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
                     >
                       <option value="">Choose a doctor</option>
-                      {doctors.map(doctor => (
+                      {doctors?.map(doctor => (
                         <option key={doctor.id} value={doctor.id}>
-                          {doctor.name} - {doctor.specialty}
+                          Dr. {doctor.profiles.first_name} {doctor.profiles.last_name} - {doctor.specialty}
                         </option>
                       ))}
                     </select>
@@ -352,13 +322,6 @@ const PatientDashboard = () => {
                       <div>
                         <p className="text-sm font-medium">Appointment Completed</p>
                         <p className="text-xs text-healthcare-text-secondary">Dr. Michael Brown - 5 days ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-healthcare-blue-light rounded-lg">
-                      <FileText className="h-5 w-5 text-healthcare-blue" />
-                      <div>
-                        <p className="text-sm font-medium">Lab Results Available</p>
-                        <p className="text-xs text-healthcare-text-secondary">Blood Test - 1 week ago</p>
                       </div>
                     </div>
                   </div>
@@ -485,7 +448,7 @@ const PatientDashboard = () => {
             </div>
           </TabsContent>
 
-          {/* Privacy Control Tab */}
+          {/* Privacy Control Tab - Updated with real functionality */}
           <TabsContent value="privacy">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Doctor Access Control */}
@@ -498,26 +461,31 @@ const PatientDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {doctors.map((doctor) => (
-                      <div key={doctor.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <User className="h-8 w-8 text-healthcare-blue" />
-                          <div>
-                            <h4 className="font-medium text-healthcare-text-primary">{doctor.name}</h4>
-                            <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
+                    {doctors?.map((doctor) => {
+                      const access = doctorAccess.find(a => a.doctorId === doctor.id);
+                      return (
+                        <div key={doctor.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <User className="h-8 w-8 text-healthcare-blue" />
+                            <div>
+                              <h4 className="font-medium text-healthcare-text-primary">
+                                Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
+                              </h4>
+                              <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={access?.hasAccess || false}
+                              onCheckedChange={() => toggleDoctorAccess(doctor.id)}
+                            />
+                            <span className="text-sm text-healthcare-text-secondary">
+                              {access?.hasAccess ? "Access Granted" : "Access Denied"}
+                            </span>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Switch
-                            checked={doctor.hasAccess}
-                            onCheckedChange={() => toggleDoctorAccess(doctor.id)}
-                          />
-                          <span className="text-sm text-healthcare-text-secondary">
-                            {doctor.hasAccess ? "Access Granted" : "Access Denied"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
@@ -534,36 +502,22 @@ const PatientDashboard = () => {
                   <div>
                     <label className="text-sm font-medium">Full Name</label>
                     <Input
-                      value={profile.name}
-                      onChange={(e) => setProfile({...profile, name: e.target.value})}
+                      value={`${profile?.first_name || ''} ${profile?.last_name || ''}`}
+                      readOnly
                     />
                   </div>
                   <div>
                     <label className="text-sm font-medium">Email</label>
                     <Input
-                      value={profile.email}
-                      onChange={(e) => setProfile({...profile, email: e.target.value})}
+                      value={profile?.email || ''}
+                      readOnly
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Phone</label>
+                    <label className="text-sm font-medium">Role</label>
                     <Input
-                      value={profile.phone}
-                      onChange={(e) => setProfile({...profile, phone: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Blood Type</label>
-                    <Input
-                      value={profile.bloodType}
-                      onChange={(e) => setProfile({...profile, bloodType: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Allergies</label>
-                    <Input
-                      value={profile.allergies}
-                      onChange={(e) => setProfile({...profile, allergies: e.target.value})}
+                      value={profile?.role || ''}
+                      readOnly
                     />
                   </div>
                   <Button onClick={updateProfile} className="w-full">
