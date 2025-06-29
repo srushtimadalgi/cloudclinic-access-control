@@ -28,7 +28,7 @@ import { useProfile } from "@/hooks/useProfile";
 const PatientDashboard = () => {
   const { toast } = useToast();
   const { data: profile } = useProfile();
-  const { doctorAccess, toggleDoctorAccess } = useDoctorAccess();
+  const { doctorAccess, loading: accessLoading, toggleDoctorAccess } = useDoctorAccess();
 
   // Fetch real doctors from database
   const { data: doctors } = useQuery({
@@ -460,33 +460,42 @@ const PatientDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {doctors?.map((doctor) => {
-                      const access = doctorAccess.find(a => a.doctorId === doctor.id);
-                      return (
-                        <div key={doctor.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
+                  {accessLoading ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-healthcare-blue mx-auto mb-2"></div>
+                      <p className="text-sm text-healthcare-text-secondary">Loading doctors...</p>
+                    </div>
+                  ) : doctorAccess.length === 0 ? (
+                    <div className="text-center py-8">
+                      <User className="h-12 w-12 text-healthcare-text-secondary mx-auto mb-4" />
+                      <p className="text-healthcare-text-secondary">No verified doctors available</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {doctorAccess.map((doctor) => (
+                        <div key={doctor.doctorId} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg hover:bg-healthcare-blue-light transition-colors">
                           <div className="flex items-center space-x-3">
                             <User className="h-8 w-8 text-healthcare-blue" />
                             <div>
                               <h4 className="font-medium text-healthcare-text-primary">
-                                Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
+                                Dr. {doctor.doctorName}
                               </h4>
                               <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
                             </div>
                           </div>
-                          <div className="flex items-center space-x-2">
-                            <Switch
-                              checked={access?.hasAccess || false}
-                              onCheckedChange={() => toggleDoctorAccess(doctor.id)}
-                            />
-                            <span className="text-sm text-healthcare-text-secondary">
-                              {access?.hasAccess ? "Access Granted" : "Access Denied"}
+                          <div className="flex items-center space-x-3">
+                            <span className={`text-sm font-medium ${doctor.hasAccess ? 'text-healthcare-green' : 'text-healthcare-text-secondary'}`}>
+                              {doctor.hasAccess ? "Access Granted" : "Access Denied"}
                             </span>
+                            <Switch
+                              checked={doctor.hasAccess}
+                              onCheckedChange={() => toggleDoctorAccess(doctor.doctorId)}
+                            />
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

@@ -6,6 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 
 interface DoctorAccess {
   doctorId: string;
+  doctorName: string;
+  specialty: string;
   hasAccess: boolean;
 }
 
@@ -23,28 +25,34 @@ export const useDoctorAccess = () => {
 
   const loadDoctorAccess = async () => {
     try {
-      // Get all doctors
+      // Get all verified doctors
       const { data: doctors, error: doctorsError } = await supabase
         .from('doctors')
         .select(`
           id,
-          profiles!inner(first_name, last_name, role)
+          specialty,
+          profiles!inner(first_name, last_name, role, status)
         `)
-        .eq('profiles.role', 'doctor');
+        .eq('profiles.role', 'doctor')
+        .eq('profiles.status', 'active')
+        .eq('verified', true);
 
       if (doctorsError) throw doctorsError;
 
-      // For now, we'll use localStorage to store access preferences
-      // In a real app, you'd want a proper table for this
+      // For now, use localStorage to store access preferences
+      // In a real app, you'd want a proper database table for this
       const savedAccess = localStorage.getItem(`doctor-access-${user?.id}`);
       const accessData = savedAccess ? JSON.parse(savedAccess) : {};
 
       const accessList = doctors?.map(doctor => ({
         doctorId: doctor.id,
+        doctorName: `${doctor.profiles.first_name} ${doctor.profiles.last_name}`,
+        specialty: doctor.specialty,
         hasAccess: accessData[doctor.id] || false
       })) || [];
 
       setDoctorAccess(accessList);
+      console.log('Doctor access loaded:', accessList);
     } catch (error) {
       console.error('Error loading doctor access:', error);
       toast({
@@ -67,7 +75,7 @@ export const useDoctorAccess = () => {
 
       setDoctorAccess(updatedAccess);
 
-      // Save to localStorage (in a real app, save to database)
+      // Save to localStorage
       const accessData = updatedAccess.reduce((acc, item) => {
         acc[item.doctorId] = item.hasAccess;
         return acc;
@@ -75,10 +83,13 @@ export const useDoctorAccess = () => {
 
       localStorage.setItem(`doctor-access-${user?.id}`, JSON.stringify(accessData));
 
+      const doctor = updatedAccess.find(d => d.doctorId === doctorId);
       toast({
         title: "Access Updated",
-        description: "Doctor access permissions have been updated",
+        description: `${doctor?.hasAccess ? 'Granted' : 'Revoked'} access to Dr. ${doctor?.doctorName}`,
       });
+
+      console.log('Doctor access updated:', updatedAccess);
     } catch (error) {
       console.error('Error updating doctor access:', error);
       toast({
