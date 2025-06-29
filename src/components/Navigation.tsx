@@ -2,17 +2,23 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, Calendar, Shield } from "lucide-react";
+import { Menu, X, User, Calendar, Shield, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
 
   const navItems = [
     { href: "/", label: "Home" },
   ];
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <nav className="bg-white shadow-sm border-b border-healthcare-gray">
@@ -47,18 +53,27 @@ const Navigation = () => {
             ))}
             
             <div className="flex items-center space-x-3">
-              <Link to="/login">
-                <Button variant="outline" size="sm">
-                  <User className="h-4 w-4 mr-2" />
-                  Login
+              {user ? (
+                <Button variant="outline" size="sm" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
                 </Button>
-              </Link>
-              <Link to="/signup">
-                <Button size="sm" className="bg-healthcare-blue hover:bg-healthcare-blue/90">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Book Appointment
-                </Button>
-              </Link>
+              ) : (
+                <>
+                  <Link to="/login">
+                    <Button variant="outline" size="sm">
+                      <User className="h-4 w-4 mr-2" />
+                      Login
+                    </Button>
+                  </Link>
+                  <Link to="/signup">
+                    <Button size="sm" className="bg-healthcare-blue hover:bg-healthcare-blue/90">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Book Appointment
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
 
@@ -93,18 +108,27 @@ const Navigation = () => {
                 </Link>
               ))}
               <div className="px-3 py-2 space-y-2">
-                <Link to="/login" onClick={() => setIsMenuOpen(false)}>
-                  <Button variant="outline" className="w-full">
-                    <User className="h-4 w-4 mr-2" />
-                    Login
+                {user ? (
+                  <Button variant="outline" className="w-full" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
                   </Button>
-                </Link>
-                <Link to="/signup" onClick={() => setIsMenuOpen(false)}>
-                  <Button className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Book Appointment
-                  </Button>
-                </Link>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={() => setIsMenuOpen(false)}>
+                      <Button variant="outline" className="w-full">
+                        <User className="h-4 w-4 mr-2" />
+                        Login
+                      </Button>
+                    </Link>
+                    <Link to="/signup" onClick={() => setIsMenuOpen(false)}>
+                      <Button className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        Book Appointment
+                      </Button>
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>

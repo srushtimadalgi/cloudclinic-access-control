@@ -25,28 +25,31 @@ export const useDoctorAccess = () => {
 
   const loadDoctorAccess = async () => {
     try {
-      // Get all verified doctors
+      // Get all verified doctors from the database
       const { data: doctors, error: doctorsError } = await supabase
         .from('doctors')
         .select(`
           id,
           specialty,
+          verified,
           profiles!inner(first_name, last_name, role, status)
         `)
         .eq('profiles.role', 'doctor')
         .eq('profiles.status', 'active')
         .eq('verified', true);
 
-      if (doctorsError) throw doctorsError;
+      if (doctorsError) {
+        console.error('Error fetching doctors:', doctorsError);
+        throw doctorsError;
+      }
 
-      // For now, use localStorage to store access preferences
-      // In a real app, you'd want a proper database table for this
+      // Get saved access preferences from localStorage
       const savedAccess = localStorage.getItem(`doctor-access-${user?.id}`);
       const accessData = savedAccess ? JSON.parse(savedAccess) : {};
 
       const accessList = doctors?.map(doctor => ({
         doctorId: doctor.id,
-        doctorName: `${doctor.profiles.first_name} ${doctor.profiles.last_name}`,
+        doctorName: `Dr. ${doctor.profiles.first_name} ${doctor.profiles.last_name}`,
         specialty: doctor.specialty,
         hasAccess: accessData[doctor.id] || false
       })) || [];
@@ -57,7 +60,7 @@ export const useDoctorAccess = () => {
       console.error('Error loading doctor access:', error);
       toast({
         title: "Error",
-        description: "Failed to load doctor access settings",
+        description: "Failed to load doctors. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -86,7 +89,7 @@ export const useDoctorAccess = () => {
       const doctor = updatedAccess.find(d => d.doctorId === doctorId);
       toast({
         title: "Access Updated",
-        description: `${doctor?.hasAccess ? 'Granted' : 'Revoked'} access to Dr. ${doctor?.doctorName}`,
+        description: `${doctor?.hasAccess ? 'Granted' : 'Revoked'} access to ${doctor?.doctorName}`,
       });
 
       console.log('Doctor access updated:', updatedAccess);
