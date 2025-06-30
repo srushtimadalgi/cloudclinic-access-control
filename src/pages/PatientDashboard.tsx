@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import Navigation from "@/components/Navigation";
 import { 
   Calendar as CalendarIcon, 
@@ -17,31 +19,46 @@ import {
   Activity,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  Upload,
+  Bell,
+  Stethoscope
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDoctorAccess } from "@/hooks/useDoctorAccess";
 import { useProfile } from "@/hooks/useProfile";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useMedicalReports } from "@/hooks/useMedicalReports";
+import { usePrescriptions } from "@/hooks/usePrescriptions";
 
 const PatientDashboard = () => {
   const { toast } = useToast();
   const { data: profile } = useProfile();
   const { doctorAccess, loading: accessLoading, toggleDoctorAccess } = useDoctorAccess();
+  const { notifications, markAsRead } = useNotifications();
+  const { reports, uploading, uploadReport } = useMedicalReports();
+  const { prescriptions } = usePrescriptions();
 
-  // Fetch real doctors from database
-  const { data: doctors } = useQuery({
-    queryKey: ['doctors'],
+  const [uploadDialog, setUploadDialog] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState("");
+
+  // Fetch all verified doctors
+  const { data: allDoctors } = useQuery({
+    queryKey: ['all-doctors'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('doctors')
         .select(`
           id,
           specialty,
+          verified,
           profiles!inner(first_name, last_name, status)
         `)
-        .eq('profiles.status', 'active');
+        .eq('profiles.status', 'active')
+        .eq('verified', true);
 
       if (error) throw error;
       return data;
@@ -58,39 +75,6 @@ const PatientDashboard = () => {
       status: "approved",
       reason: "Regular checkup",
       location: "CloudClinic Main Branch"
-    },
-    {
-      id: 2,
-      doctorName: "Dr. Michael Brown",
-      specialty: "Cardiologist",
-      date: "2024-01-25",
-      time: "2:30 PM",
-      status: "pending",
-      reason: "Heart consultation",
-      location: "CloudClinic Cardiology"
-    }
-  ]);
-
-  const [prescriptions] = useState([
-    {
-      id: 1,
-      medication: "Amoxicillin 500mg",
-      dosage: "3 times daily",
-      prescribedBy: "Dr. Sarah Smith",
-      date: "2024-01-15",
-      duration: "7 days",
-      status: "active"
-    }
-  ]);
-
-  const [healthRecords] = useState([
-    {
-      id: 1,
-      type: "Lab Report",
-      title: "Blood Test Results",
-      date: "2024-01-15",
-      doctor: "Dr. Sarah Smith",
-      status: "completed"
     }
   ]);
 
@@ -111,7 +95,7 @@ const PatientDashboard = () => {
       return;
     }
 
-    const doctor = doctors?.find(d => d.id === newAppointment.doctorId);
+    const doctor = allDoctors?.find(d => d.id === newAppointment.doctorId);
     const appointment = {
       id: appointments.length + 1,
       doctorName: `Dr. ${doctor?.profiles.first_name} ${doctor?.profiles.last_name}` || "",
@@ -132,11 +116,20 @@ const PatientDashboard = () => {
     });
   };
 
-  const updateProfile = () => {
-    toast({
-      title: "Profile Updated",
-      description: "Your profile information has been saved",
-    });
+  const handleFileUpload = async () => {
+    if (!uploadFile || !uploadTitle) {
+      toast({
+        title: "Error",
+        description: "Please select a file and enter a title",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await uploadReport(uploadFile, uploadTitle);
+    setUploadDialog(false);
+    setUploadFile(null);
+    setUploadTitle("");
   };
 
   const getStatusColor = (status: string) => {
@@ -164,21 +157,36 @@ const PatientDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-healthcare-text-primary">
-            Patient Dashboard
-          </h1>
-          <p className="text-healthcare-text-secondary mt-1">
-            Welcome back, {profile?.first_name} {profile?.last_name}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-healthcare-text-primary">
+                Patient Dashboard
+              </h1>
+              <p className="text-healthcare-text-secondary mt-1">
+                Welcome back, {profile?.first_name} {profile?.last_name}
+              </p>
+            </div>
+            {/* Notifications */}
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <Bell className="h-6 w-6 text-healthcare-blue" />
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {notifications.filter(n => !n.read).length}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Upcoming Appointments</p>
+                  <p className="text-sm text-healthcare-text-secondary">Appointments</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
                     {appointments.filter(apt => apt.status === "approved").length}
                   </p>
@@ -191,7 +199,7 @@ const PatientDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Active Prescriptions</p>
+                  <p className="text-sm text-healthcare-text-secondary">Prescriptions</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
                     {prescriptions.filter(p => p.status === "active").length}
                   </p>
@@ -204,8 +212,8 @@ const PatientDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Health Records</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{healthRecords.length}</p>
+                  <p className="text-sm text-healthcare-text-secondary">Reports</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{reports.length}</p>
                 </div>
                 <Heart className="h-8 w-8 text-red-500" />
               </div>
@@ -224,14 +232,29 @@ const PatientDashboard = () => {
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Notifications</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">
+                    {notifications.filter(n => !n.read).length}
+                  </p>
+                </div>
+                <Bell className="h-8 w-8 text-healthcare-blue" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Main Content */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="appointments">Appointments</TabsTrigger>
-            <TabsTrigger value="records">Health Records</TabsTrigger>
+            <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
+            <TabsTrigger value="reports">Medical Reports</TabsTrigger>
+            <TabsTrigger value="doctors">All Doctors</TabsTrigger>
             <TabsTrigger value="privacy">Privacy Control</TabsTrigger>
           </TabsList>
 
@@ -242,9 +265,7 @@ const PatientDashboard = () => {
               <Card>
                 <CardHeader>
                   <CardTitle>Book New Appointment</CardTitle>
-                  <CardDescription>
-                    Schedule an appointment with your doctor
-                  </CardDescription>
+                  <CardDescription>Schedule an appointment with your doctor</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
@@ -255,13 +276,14 @@ const PatientDashboard = () => {
                       className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
                     >
                       <option value="">Choose a doctor</option>
-                      {doctors?.map(doctor => (
+                      {allDoctors?.map(doctor => (
                         <option key={doctor.id} value={doctor.id}>
                           Dr. {doctor.profiles.first_name} {doctor.profiles.last_name} - {doctor.specialty}
                         </option>
                       ))}
                     </select>
                   </div>
+                  
                   <div>
                     <label className="text-sm font-medium">Date</label>
                     <Input
@@ -300,30 +322,34 @@ const PatientDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Recent Activity */}
+              {/* Recent Notifications */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Recent Activity</CardTitle>
-                  <CardDescription>
-                    Your latest medical activities
-                  </CardDescription>
+                  <CardTitle>Recent Notifications</CardTitle>
+                  <CardDescription>Your latest notifications</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3 p-3 bg-healthcare-blue-light rounded-lg">
-                      <Activity className="h-5 w-5 text-healthcare-blue" />
-                      <div>
-                        <p className="text-sm font-medium">Prescription Updated</p>
-                        <p className="text-xs text-healthcare-text-secondary">Dr. Sarah Smith - 2 days ago</p>
+                  <div className="space-y-3">
+                    {notifications.slice(0, 5).map((notification) => (
+                      <div 
+                        key={notification.id} 
+                        className={`p-3 rounded-lg border ${!notification.read ? 'bg-healthcare-blue-light border-healthcare-blue' : 'bg-gray-50'}`}
+                        onClick={() => !notification.read && markAsRead(notification.id)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-sm font-medium">{notification.title}</p>
+                            <p className="text-xs text-healthcare-text-secondary">{notification.message}</p>
+                          </div>
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-healthcare-blue rounded-full"></div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-healthcare-blue-light rounded-lg">
-                      <CalendarIcon className="h-5 w-5 text-healthcare-green" />
-                      <div>
-                        <p className="text-sm font-medium">Appointment Completed</p>
-                        <p className="text-xs text-healthcare-text-secondary">Dr. Michael Brown - 5 days ago</p>
-                      </div>
-                    </div>
+                    ))}
+                    {notifications.length === 0 && (
+                      <p className="text-center text-healthcare-text-secondary py-4">No notifications</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -332,12 +358,11 @@ const PatientDashboard = () => {
 
           {/* Appointments Tab */}
           <TabsContent value="appointments">
+            
             <Card>
               <CardHeader>
                 <CardTitle>My Appointments</CardTitle>
-                <CardDescription>
-                  View and manage your appointments
-                </CardDescription>
+                <CardDescription>View and manage your appointments</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -380,78 +405,171 @@ const PatientDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Health Records Tab */}
-          <TabsContent value="records">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Health Records */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Health Records</CardTitle>
-                  <CardDescription>
-                    Your medical records and test results
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {healthRecords.map((record) => (
-                      <div key={record.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="h-8 w-8 text-healthcare-blue" />
-                          <div>
-                            <h4 className="font-medium text-healthcare-text-primary">{record.title}</h4>
-                            <p className="text-sm text-healthcare-text-secondary">
-                              {record.type} • {record.doctor} • {record.date}
-                            </p>
-                          </div>
-                        </div>
-                        <Button variant="outline" size="sm">
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
+          {/* Prescriptions Tab */}
+          <TabsContent value="prescriptions">
+            <Card>
+              <CardHeader>
+                <CardTitle>My Prescriptions</CardTitle>
+                <CardDescription>Current and past prescriptions from doctors</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {prescriptions.map((prescription) => (
+                    <div key={prescription.id} className="p-4 border border-healthcare-gray rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-healthcare-text-primary">
+                          {prescription.medication}
+                        </h4>
+                        <Badge className={prescription.status === "active" ? "bg-healthcare-green" : "bg-gray-500"}>
+                          {prescription.status}
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Prescriptions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>My Prescriptions</CardTitle>
-                  <CardDescription>
-                    Current and past prescriptions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {prescriptions.map((prescription) => (
-                      <div key={prescription.id} className="p-4 border border-healthcare-gray rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-healthcare-text-primary">
-                            {prescription.medication}
-                          </h4>
-                          <Badge className={prescription.status === "active" ? "bg-healthcare-green" : "bg-gray-500"}>
-                            {prescription.status}
-                          </Badge>
-                        </div>
+                      <p className="text-sm text-healthcare-text-secondary">
+                        <strong>Dosage:</strong> {prescription.dosage} • <strong>Duration:</strong> {prescription.duration}
+                      </p>
+                      {prescription.instructions && (
                         <p className="text-sm text-healthcare-text-secondary">
-                          {prescription.dosage} • {prescription.duration}
+                          <strong>Instructions:</strong> {prescription.instructions}
                         </p>
-                        <p className="text-sm text-healthcare-text-secondary">
-                          Prescribed by {prescription.prescribedBy} on {prescription.date}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                      )}
+                      <p className="text-sm text-healthcare-text-secondary mt-2">
+                        Prescribed by {prescription.doctor_name} on {new Date(prescription.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                  {prescriptions.length === 0 && (
+                    <p className="text-center text-healthcare-text-secondary py-8">No prescriptions found</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
-          {/* Privacy Control Tab - Updated with real functionality */}
+          {/* Medical Reports Tab */}
+          <TabsContent value="reports">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Medical Reports</CardTitle>
+                    <CardDescription>Upload and manage your medical reports</CardDescription>
+                  </div>
+                  <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload Report
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Upload Medical Report</DialogTitle>
+                        <DialogDescription>
+                          Upload your medical reports, lab results, or other medical documents
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="title">Report Title</Label>
+                          <Input
+                            id="title"
+                            value={uploadTitle}
+                            onChange={(e) => setUploadTitle(e.target.value)}
+                            placeholder="e.g., Blood Test Results, X-Ray Report"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="file">Select File</Label>
+                          <Input
+                            id="file"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                          />
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button variant="outline" onClick={() => setUploadDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleFileUpload} disabled={uploading}>
+                            {uploading ? "Uploading..." : "Upload"}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {reports.map((report) => (
+                    <div key={report.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <FileText className="h-8 w-8 text-healthcare-blue" />
+                        <div>
+                          <h4 className="font-medium text-healthcare-text-primary">{report.title}</h4>
+                          <p className="text-sm text-healthcare-text-secondary">
+                            {report.file_type} • {new Date(report.uploaded_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={report.file_url} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-4 w-4 mr-2" />
+                          View
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                  {reports.length === 0 && (
+                    <p className="text-center text-healthcare-text-secondary py-8">No medical reports uploaded</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* All Doctors Tab */}
+          <TabsContent value="doctors">
+            <Card>
+              <CardHeader>
+                <CardTitle>Available Doctors</CardTitle>
+                <CardDescription>Browse all available doctors in the system</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {allDoctors?.map((doctor) => (
+                    <Card key={doctor.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-healthcare-blue p-3 rounded-full">
+                            <Stethoscope className="h-8 w-8 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-healthcare-text-primary">
+                              Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
+                            </h3>
+                            <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
+                            <Badge variant={doctor.verified ? "default" : "secondary"} className="mt-1">
+                              {doctor.verified ? "Verified" : "Unverified"}
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                {!allDoctors?.length && (
+                  <p className="text-center text-healthcare-text-secondary py-8">No doctors available</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Privacy Control Tab */}
           <TabsContent value="privacy">
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Doctor Access Control */}
               <Card>
                 <CardHeader>
                   <CardTitle>Doctor Access Control</CardTitle>
@@ -478,7 +596,7 @@ const PatientDashboard = () => {
                             <User className="h-8 w-8 text-healthcare-blue" />
                             <div>
                               <h4 className="font-medium text-healthcare-text-primary">
-                                Dr. {doctor.doctorName}
+                                {doctor.doctorName}
                               </h4>
                               <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
                             </div>
@@ -499,13 +617,10 @@ const PatientDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Profile Management */}
               <Card>
                 <CardHeader>
                   <CardTitle>Profile Information</CardTitle>
-                  <CardDescription>
-                    Update your personal information
-                  </CardDescription>
+                  <CardDescription>Your personal information</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
@@ -529,9 +644,6 @@ const PatientDashboard = () => {
                       readOnly
                     />
                   </div>
-                  <Button onClick={updateProfile} className="w-full">
-                    Update Profile
-                  </Button>
                 </CardContent>
               </Card>
             </div>

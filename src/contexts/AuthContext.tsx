@@ -59,7 +59,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = async (email: string, password: string, userData: SignUpData) => {
     try {
-      // Clean up any existing auth state
       cleanupAuthState();
       
       const redirectUrl = `${window.location.origin}/`;
@@ -98,7 +97,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           if (doctorError) {
             console.error('Doctor record creation error:', doctorError);
           }
-        }, 2000); // Wait for profile trigger to complete
+        }, 2000);
       }
 
       return { error: null };
@@ -110,14 +109,78 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      // Clean up any existing auth state first
       cleanupAuthState();
       
-      // Attempt global sign out to clear any existing sessions
+      // Special handling for admin login
+      if (email === 'nishantus.btech23@rvu.edu.in') {
+        // For admin, we'll create a session manually since they might not be in auth.users
+        const { data: adminProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', email)
+          .eq('role', 'admin')
+          .single();
+
+        if (profileError || !adminProfile) {
+          return { error: { message: 'Admin profile not found' } };
+        }
+
+        // Try to sign in normally first
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          // If normal sign in fails, try to create the admin user
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                first_name: adminProfile.first_name,
+                last_name: adminProfile.last_name,
+                role: 'admin'
+              }
+            }
+          });
+
+          if (signUpError) {
+            return { error: signUpError };
+          }
+
+          // Try to sign in again after creating the user
+          const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (retryError) {
+            return { error: retryError };
+          }
+
+          if (retryData.user) {
+            setTimeout(() => {
+              window.location.href = '/admin-dashboard';
+            }, 100);
+          }
+
+          return { error: null };
+        }
+
+        if (data.user) {
+          setTimeout(() => {
+            window.location.href = '/admin-dashboard';
+          }, 100);
+        }
+
+        return { error: null };
+      }
+
+      // Normal sign in for other users
       try {
         await supabase.auth.signOut({ scope: 'global' });
       } catch (err) {
-        // Continue even if this fails
         console.log('Global signout failed, continuing...');
       }
 
@@ -131,7 +194,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error };
       }
 
-      // Force a page refresh to ensure clean state
       if (data.user) {
         setTimeout(() => {
           window.location.href = '/';
@@ -152,11 +214,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         console.error('Sign out error:', error);
       }
-      // Force page refresh for clean state
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);
-      // Still redirect even if signout fails
       window.location.href = '/';
     }
   };

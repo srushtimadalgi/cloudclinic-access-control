@@ -2,22 +2,64 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, Calendar, Shield, LogOut } from "lucide-react";
+import { Menu, X, User, Calendar, Shield, LogOut, Home } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { data: profile } = useProfile();
 
   const isActive = (path: string) => location.pathname === path;
 
-  const navItems = [
-    { href: "/", label: "Home" },
-  ];
+  // Dynamic navigation items based on user role
+  const getNavItems = () => {
+    if (!user || !profile) {
+      return [{ href: "/home", label: "Home" }];
+    }
+
+    const baseItems = [{ href: "/home", label: "Home" }];
+
+    switch (profile.role) {
+      case 'patient':
+        return [
+          ...baseItems,
+          { href: "/patient-dashboard", label: "Dashboard" }
+        ];
+      case 'doctor':
+        return [
+          ...baseItems,
+          { href: "/doctor-dashboard", label: "Dashboard" }
+        ];
+      case 'admin':
+        return [
+          ...baseItems,
+          { href: "/admin-dashboard", label: "Admin Dashboard" }
+        ];
+      default:
+        return baseItems;
+    }
+  };
+
+  const navItems = getNavItems();
 
   const handleLogout = async () => {
     await signOut();
+  };
+
+  const getRoleIcon = () => {
+    switch (profile?.role) {
+      case 'admin':
+        return <Shield className="h-4 w-4 mr-2" />;
+      case 'doctor':
+        return <User className="h-4 w-4 mr-2" />;
+      case 'patient':
+        return <Calendar className="h-4 w-4 mr-2" />;
+      default:
+        return <User className="h-4 w-4 mr-2" />;
+    }
   };
 
   return (
@@ -26,7 +68,7 @@ const Navigation = () => {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-2">
+            <Link to={user ? "/" : "/home"} className="flex items-center space-x-2">
               <div className="bg-healthcare-blue p-2 rounded-lg">
                 <Shield className="h-6 w-6 text-white" />
               </div>
@@ -53,11 +95,19 @@ const Navigation = () => {
             ))}
             
             <div className="flex items-center space-x-3">
-              {user ? (
-                <Button variant="outline" size="sm" onClick={handleLogout}>
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </Button>
+              {user && profile ? (
+                <div className="flex items-center space-x-3">
+                  <div className="text-sm">
+                    <span className="text-healthcare-text-secondary">Welcome, </span>
+                    <span className="font-medium text-healthcare-text-primary">
+                      {profile.role === 'doctor' ? 'Dr. ' : ''}{profile.first_name}
+                    </span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </div>
               ) : (
                 <>
                   <Link to="/login">
@@ -69,7 +119,7 @@ const Navigation = () => {
                   <Link to="/signup">
                     <Button size="sm" className="bg-healthcare-blue hover:bg-healthcare-blue/90">
                       <Calendar className="h-4 w-4 mr-2" />
-                      Book Appointment
+                      Sign Up
                     </Button>
                   </Link>
                 </>
@@ -108,11 +158,19 @@ const Navigation = () => {
                 </Link>
               ))}
               <div className="px-3 py-2 space-y-2">
-                {user ? (
-                  <Button variant="outline" className="w-full" onClick={handleLogout}>
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
-                  </Button>
+                {user && profile ? (
+                  <>
+                    <div className="text-sm pb-2">
+                      <span className="text-healthcare-text-secondary">Welcome, </span>
+                      <span className="font-medium text-healthcare-text-primary">
+                        {profile.role === 'doctor' ? 'Dr. ' : ''}{profile.first_name}
+                      </span>
+                    </div>
+                    <Button variant="outline" className="w-full" onClick={handleLogout}>
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Logout
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <Link to="/login" onClick={() => setIsMenuOpen(false)}>
@@ -124,7 +182,7 @@ const Navigation = () => {
                     <Link to="/signup" onClick={() => setIsMenuOpen(false)}>
                       <Button className="w-full bg-healthcare-blue hover:bg-healthcare-blue/90">
                         <Calendar className="h-4 w-4 mr-2" />
-                        Book Appointment
+                        Sign Up
                       </Button>
                     </Link>
                   </>

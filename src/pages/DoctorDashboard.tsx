@@ -1,131 +1,113 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Navigation from "@/components/Navigation";
 import { 
-  Calendar as CalendarIcon, 
   Users, 
+  Calendar, 
   FileText, 
-  Search, 
-  User,
-  Clock,
-  CheckCircle,
-  XCircle
+  Stethoscope,
+  UserPlus,
+  Edit,
+  Save
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useProfile } from "@/hooks/useProfile";
+import { usePrescriptions } from "@/hooks/usePrescriptions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const DoctorDashboard = () => {
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-
-  // Mock appointments data with management capabilities
-  const [appointments, setAppointments] = useState([
-    {
-      id: 1,
-      patientName: "John Doe",
-      patientEmail: "john.doe@email.com",
-      date: "2024-01-20",
-      time: "10:00 AM",
-      status: "pending",
-      reason: "Regular checkup",
-      notes: ""
-    },
-    {
-      id: 2,
-      patientName: "Jane Smith",
-      patientEmail: "jane.smith@email.com",
-      date: "2024-01-22",
-      time: "2:30 PM",
-      status: "approved",
-      reason: "Follow-up consultation",
-      notes: "Patient recovering well"
-    },
-    {
-      id: 3,
-      patientName: "Bob Johnson",
-      patientEmail: "bob.johnson@email.com",
-      date: "2024-01-25",
-      time: "11:15 AM",
-      status: "pending",
-      reason: "Initial consultation",
-      notes: ""
-    }
-  ]);
-
-  const [patients] = useState([
-    {
-      id: 1,
-      name: "John Doe",
-      email: "john.doe@email.com",
-      phone: "+1 (555) 123-4567",
-      dateOfBirth: "1985-03-15",
-      bloodType: "O+",
-      allergies: "Penicillin",
-      hasAccess: true,
-      lastVisit: "2024-01-15"
-    },
-    {
-      id: 2,
-      name: "Jane Smith",
-      email: "jane.smith@email.com",
-      phone: "+1 (555) 987-6543",
-      dateOfBirth: "1990-07-22",
-      bloodType: "A-",
-      allergies: "None",
-      hasAccess: true,
-      lastVisit: "2024-01-10"
-    }
-  ]);
-
-  const [prescriptions, setPrescriptions] = useState([
-    {
-      id: 1,
-      patientName: "John Doe",
-      medication: "Amoxicillin 500mg",
-      dosage: "3 times daily",
-      duration: "7 days",
-      date: "2024-01-15",
-      status: "active"
-    }
-  ]);
-
+  const { user } = useAuth();
+  const { data: profile } = useProfile();
+  const { prescriptions, createPrescription } = usePrescriptions();
+  
+  const [prescriptionDialog, setPrescriptionDialog] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileData, setProfileData] = useState({
+    firstName: profile?.first_name || '',
+    lastName: profile?.last_name || '',
+    specialty: '',
+    licenseNumber: ''
+  });
+  
   const [newPrescription, setNewPrescription] = useState({
-    patientId: "",
-    medication: "",
-    dosage: "",
-    duration: "",
-    instructions: ""
+    patient_id: '',
+    medication: '',
+    dosage: '',
+    duration: '',
+    instructions: ''
   });
 
-  const updateAppointmentStatus = (appointmentId: number, newStatus: string) => {
-    setAppointments(appointments.map(apt => 
-      apt.id === appointmentId 
-        ? { ...apt, status: newStatus }
-        : apt
-    ));
-    toast({
-      title: "Appointment Updated",
-      description: `Appointment has been ${newStatus}`,
-    });
-  };
+  // Fetch all patients
+  const { data: patients } = useQuery({
+    queryKey: ['patients'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'patient')
+        .eq('status', 'active');
 
-  const rescheduleAppointment = (appointmentId: number) => {
-    // In a real app, this would open a modal or form for rescheduling
-    toast({
-      title: "Reschedule Request",
-      description: "Rescheduling functionality would be implemented here",
-    });
-  };
+      if (error) throw error;
+      return data;
+    }
+  });
 
-  const addPrescription = () => {
-    if (!newPrescription.patientId || !newPrescription.medication) {
+  // Fetch doctor info
+  const { data: doctorInfo } = useQuery({
+    queryKey: ['doctor-info', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
+
+  // Fetch patients with granted access
+  const { data: accessiblePatients } = useQuery({
+    queryKey: ['accessible-patients'],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('doctor_patient_access')
+        .select(`
+          *,
+          patient:profiles!doctor_patient_access_patient_id_fkey(*)
+        `);
+
+      if (error) throw error;
+      
+      // Filter patients who have granted access to this doctor
+      return data?.filter(access => 
+        access.access_data && 
+        Object.values(access.access_data).includes(user.id)
+      ) || [];
+    }
+  });
+
+  const handleCreatePrescription = async () => {
+    if (!newPrescription.patient_id || !newPrescription.medication || !newPrescription.dosage || !newPrescription.duration) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -134,60 +116,57 @@ const DoctorDashboard = () => {
       return;
     }
 
-    const patient = patients.find(p => p.id.toString() === newPrescription.patientId);
-    if (!patient?.hasAccess) {
+    await createPrescription(newPrescription);
+    setPrescriptionDialog(false);
+    setNewPrescription({
+      patient_id: '',
+      medication: '',
+      dosage: '',
+      duration: '',
+      instructions: ''
+    });
+  };
+
+  const updateDoctorProfile = async () => {
+    if (!user) return;
+
+    try {
+      // Update profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          first_name: profileData.firstName,
+          last_name: profileData.lastName,
+        })
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
+      // Update doctor info
+      const { error: doctorError } = await supabase
+        .from('doctors')
+        .upsert({
+          id: user.id,
+          specialty: profileData.specialty,
+          license_number: profileData.licenseNumber,
+        });
+
+      if (doctorError) throw doctorError;
+
       toast({
-        title: "Access Denied",
-        description: "Patient has not granted you access to their medical records",
+        title: "Success",
+        description: "Profile updated successfully",
+      });
+
+      setEditingProfile(false);
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
         variant: "destructive",
       });
-      return;
     }
-
-    const prescription = {
-      id: prescriptions.length + 1,
-      patientName: patient.name,
-      medication: newPrescription.medication,
-      dosage: newPrescription.dosage,
-      duration: newPrescription.duration,
-      date: new Date().toISOString().split('T')[0],
-      status: "active"
-    };
-
-    setPrescriptions([...prescriptions, prescription]);
-    setNewPrescription({
-      patientId: "",
-      medication: "",
-      dosage: "",
-      duration: "",
-      instructions: ""
-    });
-
-    toast({
-      title: "Prescription Added",
-      description: "Prescription has been successfully added to patient's records",
-    });
-  };
-
-  const filteredPatients = patients.filter(patient => 
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "approved": return "bg-green-500";
-      case "pending": return "bg-yellow-500";
-      case "canceled": return "bg-red-500";
-      default: return "bg-gray-500";
-    }
-  };
-
-  const stats = {
-    totalPatients: patients.length,
-    todayAppointments: appointments.filter(apt => apt.date === new Date().toISOString().split('T')[0]).length,
-    pendingAppointments: appointments.filter(apt => apt.status === "pending").length,
-    activePrescriptions: prescriptions.filter(p => p.status === "active").length
   };
 
   return (
@@ -201,7 +180,7 @@ const DoctorDashboard = () => {
             Doctor Dashboard
           </h1>
           <p className="text-healthcare-text-secondary mt-1">
-            Welcome back, Dr. Sarah Smith
+            Welcome back, Dr. {profile?.first_name} {profile?.last_name}
           </p>
         </div>
 
@@ -212,7 +191,9 @@ const DoctorDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-healthcare-text-secondary">Total Patients</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.totalPatients}</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">
+                    {accessiblePatients?.length || 0}
+                  </p>
                 </div>
                 <Users className="h-8 w-8 text-healthcare-blue" />
               </div>
@@ -222,10 +203,12 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Today's Appointments</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.todayAppointments}</p>
+                  <p className="text-sm text-healthcare-text-secondary">Prescriptions</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">
+                    {prescriptions.filter(p => p.doctor_id === user?.id).length}
+                  </p>
                 </div>
-                <CalendarIcon className="h-8 w-8 text-healthcare-green" />
+                <FileText className="h-8 w-8 text-healthcare-green" />
               </div>
             </CardContent>
           </Card>
@@ -233,10 +216,12 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Pending Approvals</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.pendingAppointments}</p>
+                  <p className="text-sm text-healthcare-text-secondary">Specialty</p>
+                  <p className="text-lg font-bold text-healthcare-text-primary">
+                    {doctorInfo?.specialty || 'Not Set'}
+                  </p>
                 </div>
-                <Clock className="h-8 w-8 text-yellow-500" />
+                <Stethoscope className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
@@ -244,272 +229,331 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Active Prescriptions</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{stats.activePrescriptions}</p>
+                  <p className="text-sm text-healthcare-text-secondary">Status</p>
+                  <Badge variant={doctorInfo?.verified ? "default" : "secondary"}>
+                    {doctorInfo?.verified ? "Verified" : "Unverified"}
+                  </Badge>
                 </div>
-                <FileText className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="appointments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="appointments">Appointments</TabsTrigger>
-            <TabsTrigger value="patients">Patients</TabsTrigger>
+        <Tabs defaultValue="patients" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="patients">My Patients</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
+            <TabsTrigger value="all-patients">All Patients</TabsTrigger>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
-          {/* Appointments Tab */}
-          <TabsContent value="appointments">
+          {/* My Patients Tab */}
+          <TabsContent value="patients">
             <Card>
               <CardHeader>
-                <CardTitle>Appointment Management</CardTitle>
-                <CardDescription>
-                  Manage your appointments - approve, reschedule, or cancel
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>My Patients</CardTitle>
+                    <CardDescription>Patients who have granted you access to their records</CardDescription>
+                  </div>
+                  <Dialog open={prescriptionDialog} onOpenChange={setPrescriptionDialog}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        New Prescription
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create New Prescription</DialogTitle>
+                        <DialogDescription>
+                          Create a prescription for your patient
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="patient">Select Patient</Label>
+                          <Select onValueChange={(value) => setNewPrescription({...newPrescription, patient_id: value})}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a patient" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accessiblePatients?.map((access) => (
+                                <SelectItem key={access.patient_id} value={access.patient_id}>
+                                  {access.patient.first_name} {access.patient.last_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="medication">Medication</Label>
+                          <Input
+                            id="medication"
+                            value={newPrescription.medication}
+                            onChange={(e) => setNewPrescription({...newPrescription, medication: e.target.value})}
+                            placeholder="e.g., Amoxicillin 500mg"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="dosage">Dosage</Label>
+                          <Input
+                            id="dosage"
+                            value={newPrescription.dosage}
+                            onChange={(e) => setNewPrescription({...newPrescription, dosage: e.target.value})}
+                            placeholder="e.g., 3 times daily"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="duration">Duration</Label>
+                          <Input
+                            id="duration"
+                            value={newPrescription.duration}
+                            onChange={(e) => setNewPrescription({...newPrescription, duration: e.target.value})}
+                            placeholder="e.g., 7 days"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="instructions">Instructions (Optional)</Label>
+                          <Textarea
+                            id="instructions"
+                            value={newPrescription.instructions}
+                            onChange={(e) => setNewPrescription({...newPrescription, instructions: e.target.value})}
+                            placeholder="Additional instructions for the patient"
+                          />
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button variant="outline" onClick={() => setPrescriptionDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleCreatePrescription}>
+                            Create Prescription
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Reason</TableHead>
+                      <TableHead>Patient Name</TableHead>
+                      <TableHead>Email</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>Access Granted</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {appointments.map((appointment) => (
-                      <TableRow key={appointment.id}>
-                        <TableCell className="font-medium">{appointment.patientName}</TableCell>
-                        <TableCell>{appointment.date}</TableCell>
-                        <TableCell>{appointment.time}</TableCell>
-                        <TableCell>{appointment.reason}</TableCell>
+                    {accessiblePatients?.map((access) => (
+                      <TableRow key={access.patient_id}>
+                        <TableCell className="font-medium">
+                          {access.patient.first_name} {access.patient.last_name}
+                        </TableCell>
+                        <TableCell>{access.patient.email}</TableCell>
                         <TableCell>
-                          <Badge className={getStatusColor(appointment.status)}>
-                            {appointment.status}
+                          <Badge variant={access.patient.status === 'active' ? 'default' : 'secondary'}>
+                            {access.patient.status}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex space-x-2">
-                            {appointment.status === "pending" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  onClick={() => updateAppointmentStatus(appointment.id, "approved")}
-                                  className="bg-green-500 hover:bg-green-600"
-                                >
-                                  <CheckCircle className="h-4 w-4 mr-1" />
-                                  Approve
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => updateAppointmentStatus(appointment.id, "canceled")}
-                                >
-                                  <XCircle className="h-4 w-4 mr-1" />
-                                  Cancel
-                                </Button>
-                              </>
-                            )}
-                            {appointment.status === "approved" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => rescheduleAppointment(appointment.id)}
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Reschedule
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => updateAppointmentStatus(appointment.id, "canceled")}
-                                >
-                                  <XCircle className="h-4 w-4 mr-1" />
-                                  Cancel
-                                </Button>
-                              </>
-                            )}
-                          </div>
+                          <Badge className="bg-green-500">Access Granted</Badge>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Patients Tab */}
-          <TabsContent value="patients">
-            <Card>
-              <CardHeader>
-                <CardTitle>Patient Records</CardTitle>
-                <CardDescription>
-                  Access patient information (only those who granted you access)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-healthcare-text-secondary h-4 w-4" />
-                    <Input
-                      placeholder="Search patients..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  {filteredPatients.map((patient) => (
-                    <div
-                      key={patient.id}
-                      className={`p-4 border rounded-lg ${
-                        patient.hasAccess ? 'border-healthcare-blue bg-healthcare-blue-light' : 'border-red-300 bg-red-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <div className="bg-white rounded-full p-2">
-                            <User className="h-6 w-6 text-healthcare-blue" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-healthcare-text-primary">
-                              {patient.name}
-                            </h4>
-                            <p className="text-sm text-healthcare-text-secondary">
-                              {patient.email} • Last visit: {patient.lastVisit}
-                            </p>
-                            {patient.hasAccess && (
-                              <p className="text-sm text-healthcare-text-secondary">
-                                Blood Type: {patient.bloodType} • Allergies: {patient.allergies}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge
-                            variant={patient.hasAccess ? "default" : "secondary"}
-                            className={patient.hasAccess ? "bg-healthcare-green" : "bg-red-500"}
-                          >
-                            {patient.hasAccess ? "Access Granted" : "Access Denied"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {accessiblePatients?.length === 0 && (
+                  <p className="text-center text-healthcare-text-secondary py-8">
+                    No patients have granted you access yet
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* Prescriptions Tab */}
           <TabsContent value="prescriptions">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Add Prescription */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Add New Prescription</CardTitle>
-                  <CardDescription>
-                    Create a prescription for your patients
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium">Patient</label>
-                    <select
-                      value={newPrescription.patientId}
-                      onChange={(e) => setNewPrescription({...newPrescription, patientId: e.target.value})}
-                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
-                    >
-                      <option value="">Select a patient</option>
-                      {patients.filter(p => p.hasAccess).map(patient => (
-                        <option key={patient.id} value={patient.id}>{patient.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Medication</label>
-                    <Input
-                      value={newPrescription.medication}
-                      onChange={(e) => setNewPrescription({...newPrescription, medication: e.target.value})}
-                      placeholder="e.g., Amoxicillin 500mg"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Dosage</label>
-                    <Input
-                      value={newPrescription.dosage}
-                      onChange={(e) => setNewPrescription({...newPrescription, dosage: e.target.value})}
-                      placeholder="e.g., 3 times daily"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Duration</label>
-                    <Input
-                      value={newPrescription.duration}
-                      onChange={(e) => setNewPrescription({...newPrescription, duration: e.target.value})}
-                      placeholder="e.g., 7 days"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Instructions</label>
-                    <Textarea
-                      value={newPrescription.instructions}
-                      onChange={(e) => setNewPrescription({...newPrescription, instructions: e.target.value})}
-                      placeholder="Additional instructions..."
-                    />
-                  </div>
-                  <Button onClick={addPrescription} className="w-full">
-                    Add Prescription
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Recent Prescriptions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Prescriptions</CardTitle>
-                  <CardDescription>
-                    Your recently added prescriptions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {prescriptions.map((prescription) => (
-                      <div
-                        key={prescription.id}
-                        className="p-4 border border-healthcare-gray rounded-lg"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-medium text-healthcare-text-primary">
-                              {prescription.patientName}
-                            </h4>
-                            <p className="text-sm text-healthcare-text-secondary">
-                              {prescription.medication} - {prescription.dosage}
-                            </p>
-                            <p className="text-sm text-healthcare-text-secondary">
-                              Duration: {prescription.duration} • Date: {prescription.date}
-                            </p>
-                          </div>
-                          <Badge className="bg-healthcare-green">
-                            {prescription.status}
-                          </Badge>
-                        </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>My Prescriptions</CardTitle>
+                <CardDescription>Prescriptions you have created</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {prescriptions.filter(p => p.doctor_id === user?.id).map((prescription) => (
+                    <div key={prescription.id} className="p-4 border border-healthcare-gray rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-healthcare-text-primary">
+                          {prescription.medication}
+                        </h4>
+                        <Badge className={prescription.status === "active" ? "bg-healthcare-green" : "bg-gray-500"}>
+                          {prescription.status}
+                        </Badge>
                       </div>
+                      <p className="text-sm text-healthcare-text-secondary">
+                        <strong>Patient:</strong> {prescription.patient_name}
+                      </p>
+                      <p className="text-sm text-healthcare-text-secondary">
+                        <strong>Dosage:</strong> {prescription.dosage} • <strong>Duration:</strong> {prescription.duration}
+                      </p>
+                      {prescription.instructions && (
+                        <p className="text-sm text-healthcare-text-secondary">
+                          <strong>Instructions:</strong> {prescription.instructions}
+                        </p>
+                      )}
+                      <p className="text-sm text-healthcare-text-secondary mt-2">
+                        Prescribed on {new Date(prescription.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                  {prescriptions.filter(p => p.doctor_id === user?.id).length === 0 && (
+                    <p className="text-center text-healthcare-text-secondary py-8">No prescriptions created yet</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* All Patients Tab */}
+          <TabsContent value="all-patients">
+            <Card>
+              <CardHeader>
+                <CardTitle>All Patients</CardTitle>
+                <CardDescription>All patients in the system</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Joined</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {patients?.map((patient) => (
+                      <TableRow key={patient.id}>
+                        <TableCell className="font-medium">
+                          {patient.first_name} {patient.last_name}
+                        </TableCell>
+                        <TableCell>{patient.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={patient.status === 'active' ? 'default' : 'secondary'}>
+                            {patient.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(patient.created_at || '').toLocaleDateString()}</TableCell>
+                      </TableRow>
                     ))}
+                  </TableBody>
+                </Table>
+                {patients?.length === 0 && (
+                  <p className="text-center text-healthcare-text-secondary py-8">No patients found</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Profile Tab */}
+          <TabsContent value="profile">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Doctor Profile</CardTitle>
+                    <CardDescription>Manage your professional information</CardDescription>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <Button
+                    variant={editingProfile ? "default" : "outline"}
+                    onClick={() => {
+                      if (editingProfile) {
+                        updateDoctorProfile();
+                      } else {
+                        setProfileData({
+                          firstName: profile?.first_name || '',
+                          lastName: profile?.last_name || '',
+                          specialty: doctorInfo?.specialty || '',
+                          licenseNumber: doctorInfo?.license_number || ''
+                        });
+                        setEditingProfile(true);
+                      }
+                    }}
+                  >
+                    {editingProfile ? (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Changes
+                      </>
+                    ) : (
+                      <>
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit Profile
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      value={editingProfile ? profileData.firstName : profile?.first_name || ''}
+                      onChange={(e) => setProfileData({...profileData, firstName: e.target.value})}
+                      readOnly={!editingProfile}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      value={editingProfile ? profileData.lastName : profile?.last_name || ''}
+                      onChange={(e) => setProfileData({...profileData, lastName: e.target.value})}
+                      readOnly={!editingProfile}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    value={profile?.email || ''}
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="specialty">Specialty</Label>
+                  <Input
+                    id="specialty"
+                    value={editingProfile ? profileData.specialty : doctorInfo?.specialty || ''}
+                    onChange={(e) => setProfileData({...profileData, specialty: e.target.value})}
+                    readOnly={!editingProfile}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="licenseNumber">License Number</Label>
+                  <Input
+                    id="licenseNumber"
+                    value={editingProfile ? profileData.licenseNumber : doctorInfo?.license_number || ''}
+                    onChange={(e) => setProfileData({...profileData, licenseNumber: e.target.value})}
+                    readOnly={!editingProfile}
+                  />
+                </div>
+                <div>
+                  <Label>Verification Status</Label>
+                  <div className="mt-1">
+                    <Badge variant={doctorInfo?.verified ? "default" : "secondary"}>
+                      {doctorInfo?.verified ? "Verified" : "Unverified"}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
