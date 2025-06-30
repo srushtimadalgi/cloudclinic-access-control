@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Notification {
   id: string;
@@ -28,27 +29,15 @@ export const useNotifications = () => {
     if (!user) return;
 
     try {
-      // Mock notifications for now since types aren't updated
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          title: 'Welcome to CloudClinic',
-          message: 'Your account has been successfully created.',
-          type: 'info',
-          read: false,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          title: 'Appointment Reminder',
-          message: 'You have an upcoming appointment tomorrow at 10:00 AM.',
-          type: 'appointment',
-          read: false,
-          created_at: new Date(Date.now() - 86400000).toISOString()
-        }
-      ];
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
       
-      setNotifications(mockNotifications);
+      setNotifications(data || []);
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {
@@ -58,6 +47,13 @@ export const useNotifications = () => {
 
   const markAsRead = async (notificationId: string) => {
     try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId);
+
+      if (error) throw error;
+
       setNotifications(prev => 
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );

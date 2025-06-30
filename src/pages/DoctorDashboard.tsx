@@ -18,13 +18,17 @@ import {
   Stethoscope,
   UserPlus,
   Edit,
-  Save
+  Save,
+  Clock,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/hooks/useProfile";
 import { usePrescriptions } from "@/hooks/usePrescriptions";
+import { useAppointments } from "@/hooks/useAppointments";
 import { useAuth } from "@/contexts/AuthContext";
 
 const DoctorDashboard = () => {
@@ -32,6 +36,7 @@ const DoctorDashboard = () => {
   const { user } = useAuth();
   const { data: profile } = useProfile();
   const { prescriptions, createPrescription } = usePrescriptions();
+  const { appointments, updateAppointmentStatus, getWeeklyAppointments } = useAppointments();
   
   const [prescriptionDialog, setPrescriptionDialog] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -49,6 +54,8 @@ const DoctorDashboard = () => {
     duration: '',
     instructions: ''
   });
+
+  const weeklyAppointments = getWeeklyAppointments();
 
   // Fetch all patients
   const { data: patients } = useQuery({
@@ -81,29 +88,6 @@ const DoctorDashboard = () => {
       return data;
     },
     enabled: !!user
-  });
-
-  // Fetch patients with granted access
-  const { data: accessiblePatients } = useQuery({
-    queryKey: ['accessible-patients'],
-    queryFn: async () => {
-      if (!user) return [];
-      
-      const { data, error } = await supabase
-        .from('doctor_patient_access')
-        .select(`
-          *,
-          patient:profiles!doctor_patient_access_patient_id_fkey(*)
-        `);
-
-      if (error) throw error;
-      
-      // Filter patients who have granted access to this doctor
-      return data?.filter(access => 
-        access.access_data && 
-        Object.values(access.access_data).includes(user.id)
-      ) || [];
-    }
   });
 
   const handleCreatePrescription = async () => {
@@ -192,10 +176,23 @@ const DoctorDashboard = () => {
                 <div>
                   <p className="text-sm text-healthcare-text-secondary">Total Patients</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {accessiblePatients?.length || 0}
+                    {patients?.length || 0}
                   </p>
                 </div>
                 <Users className="h-8 w-8 text-healthcare-blue" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">This Week</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">
+                    {weeklyAppointments.length}
+                  </p>
+                </div>
+                <Calendar className="h-8 w-8 text-healthcare-green" />
               </div>
             </CardContent>
           </Card>
@@ -216,46 +213,120 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Specialty</p>
-                  <p className="text-lg font-bold text-healthcare-text-primary">
-                    {doctorInfo?.specialty || 'Not Set'}
-                  </p>
-                </div>
-                <Stethoscope className="h-8 w-8 text-healthcare-blue" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
                   <p className="text-sm text-healthcare-text-secondary">Status</p>
                   <Badge variant={doctorInfo?.verified ? "default" : "secondary"}>
                     {doctorInfo?.verified ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
+                <Stethoscope className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="patients" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="patients">My Patients</TabsTrigger>
+        <Tabs defaultValue="appointments" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="appointments">Appointments</TabsTrigger>
+            <TabsTrigger value="patients">Patients</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
             <TabsTrigger value="all-patients">All Patients</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
-          {/* My Patients Tab */}
+          {/* Appointments Tab */}
+          <TabsContent value="appointments">
+            <Card>
+              <CardHeader>
+                <CardTitle>Weekly Appointments</CardTitle>
+                <CardDescription>Manage your appointments for this week</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {weeklyAppointments.map((appointment) => (
+                      <TableRow key={appointment.id}>
+                        <TableCell>
+                          {new Date(appointment.appointment_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>{appointment.appointment_time}</TableCell>
+                        <TableCell>
+                          Patient ID: {appointment.patient_id.substring(0, 8)}...
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              appointment.status === 'confirmed' ? 'default' :
+                              appointment.status === 'completed' ? 'secondary' :
+                              appointment.status === 'cancelled' ? 'destructive' : 'outline'
+                            }
+                          >
+                            {appointment.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            {appointment.status === 'pending' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Confirm
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
+                            {appointment.status === 'confirmed' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Complete
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {weeklyAppointments.length === 0 && (
+                  <p className="text-center text-healthcare-text-secondary py-8">
+                    No appointments scheduled for this week
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Patients Tab */}
           <TabsContent value="patients">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>My Patients</CardTitle>
-                    <CardDescription>Patients who have granted you access to their records</CardDescription>
+                    <CardDescription>Patients under your care</CardDescription>
                   </div>
                   <Dialog open={prescriptionDialog} onOpenChange={setPrescriptionDialog}>
                     <DialogTrigger asChild>
@@ -279,9 +350,9 @@ const DoctorDashboard = () => {
                               <SelectValue placeholder="Select a patient" />
                             </SelectTrigger>
                             <SelectContent>
-                              {accessiblePatients?.map((access) => (
-                                <SelectItem key={access.patient_id} value={access.patient_id}>
-                                  {access.patient.first_name} {access.patient.last_name}
+                              {patients?.map((patient) => (
+                                <SelectItem key={patient.id} value={patient.id}>
+                                  {patient.first_name} {patient.last_name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -343,31 +414,29 @@ const DoctorDashboard = () => {
                       <TableHead>Patient Name</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Access Granted</TableHead>
+                      <TableHead>Joined</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {accessiblePatients?.map((access) => (
-                      <TableRow key={access.patient_id}>
+                    {patients?.map((patient) => (
+                      <TableRow key={patient.id}>
                         <TableCell className="font-medium">
-                          {access.patient.first_name} {access.patient.last_name}
+                          {patient.first_name} {patient.last_name}
                         </TableCell>
-                        <TableCell>{access.patient.email}</TableCell>
+                        <TableCell>{patient.email}</TableCell>
                         <TableCell>
-                          <Badge variant={access.patient.status === 'active' ? 'default' : 'secondary'}>
-                            {access.patient.status}
+                          <Badge variant={patient.status === 'active' ? 'default' : 'secondary'}>
+                            {patient.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <Badge className="bg-green-500">Access Granted</Badge>
-                        </TableCell>
+                        <TableCell>{new Date(patient.created_at || '').toLocaleDateString()}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-                {accessiblePatients?.length === 0 && (
+                {patients?.length === 0 && (
                   <p className="text-center text-healthcare-text-secondary py-8">
-                    No patients have granted you access yet
+                    No patients found
                   </p>
                 )}
               </CardContent>
@@ -394,7 +463,7 @@ const DoctorDashboard = () => {
                         </Badge>
                       </div>
                       <p className="text-sm text-healthcare-text-secondary">
-                        <strong>Patient:</strong> {prescription.patient_name}
+                        <strong>Patient ID:</strong> {prescription.patient_id.substring(0, 8)}...
                       </p>
                       <p className="text-sm text-healthcare-text-secondary">
                         <strong>Dosage:</strong> {prescription.dosage} • <strong>Duration:</strong> {prescription.duration}

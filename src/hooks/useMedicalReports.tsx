@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface MedicalReport {
   id: string;
@@ -28,25 +29,15 @@ export const useMedicalReports = () => {
     if (!user) return;
 
     try {
-      // Mock reports for now since types aren't updated
-      const mockReports: MedicalReport[] = [
-        {
-          id: '1',
-          title: 'Blood Test Results',
-          file_url: '#',
-          file_type: 'application/pdf',
-          uploaded_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          title: 'X-Ray Report',
-          file_url: '#',
-          file_type: 'application/pdf',
-          uploaded_at: new Date(Date.now() - 86400000).toISOString()
-        }
-      ];
+      const { data, error } = await supabase
+        .from('medical_reports')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
       
-      setReports(mockReports);
+      setReports(data || []);
     } catch (error) {
       console.error('Error loading reports:', error);
       toast({
@@ -64,16 +55,20 @@ export const useMedicalReports = () => {
 
     setUploading(true);
     try {
-      // Mock upload for now
-      const newReport: MedicalReport = {
-        id: Date.now().toString(),
-        title,
-        file_url: '#',
-        file_type: file.type,
-        uploaded_at: new Date().toISOString()
-      };
+      const { data, error } = await supabase
+        .from('medical_reports')
+        .insert({
+          patient_id: user.id,
+          title,
+          file_url: '#', // Placeholder for now
+          file_type: file.type
+        })
+        .select()
+        .single();
 
-      setReports(prev => [newReport, ...prev]);
+      if (error) throw error;
+
+      setReports(prev => [data, ...prev]);
 
       toast({
         title: "Success",

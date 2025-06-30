@@ -60,6 +60,30 @@ export type Database = {
           },
         ]
       }
+      doctor_patient_access: {
+        Row: {
+          access_granted: boolean
+          created_at: string
+          doctor_id: string
+          id: string
+          patient_id: string
+        }
+        Insert: {
+          access_granted?: boolean
+          created_at?: string
+          doctor_id: string
+          id?: string
+          patient_id: string
+        }
+        Update: {
+          access_granted?: boolean
+          created_at?: string
+          doctor_id?: string
+          id?: string
+          patient_id?: string
+        }
+        Relationships: []
+      }
       doctors: {
         Row: {
           created_at: string | null
@@ -91,6 +115,99 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      medical_reports: {
+        Row: {
+          file_type: string
+          file_url: string
+          id: string
+          patient_id: string
+          title: string
+          uploaded_at: string
+        }
+        Insert: {
+          file_type: string
+          file_url: string
+          id?: string
+          patient_id: string
+          title: string
+          uploaded_at?: string
+        }
+        Update: {
+          file_type?: string
+          file_url?: string
+          id?: string
+          patient_id?: string
+          title?: string
+          uploaded_at?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          read: boolean
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          read?: boolean
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          read?: boolean
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      prescriptions: {
+        Row: {
+          created_at: string
+          doctor_id: string
+          dosage: string
+          duration: string
+          id: string
+          instructions: string
+          medication: string
+          patient_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          doctor_id: string
+          dosage: string
+          duration: string
+          id?: string
+          instructions?: string
+          medication: string
+          patient_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          doctor_id?: string
+          dosage?: string
+          duration?: string
+          id?: string
+          instructions?: string
+          medication?: string
+          patient_id?: string
+          status?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {

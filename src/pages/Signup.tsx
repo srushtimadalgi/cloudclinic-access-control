@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import Navigation from "@/components/Navigation";
-import { Shield, User, Stethoscope } from "lucide-react";
+import { Shield, User, Stethoscope, Settings } from "lucide-react";
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -34,6 +33,15 @@ const Signup = () => {
     confirmPassword: "",
     licenseNumber: "",
     specialty: "",
+    agreeTerms: false,
+  });
+
+  const [adminForm, setAdminForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
     agreeTerms: false,
   });
 
@@ -151,6 +159,61 @@ const Signup = () => {
     }
   };
 
+  const handleAdminSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (adminForm.password !== adminForm.confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Passwords don't match!",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!adminForm.agreeTerms) {
+      toast({
+        title: "Error",
+        description: "Please agree to the terms and conditions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signUp(adminForm.email, adminForm.password, {
+        firstName: adminForm.firstName,
+        lastName: adminForm.lastName,
+        role: 'admin',
+      });
+
+      if (error) {
+        toast({
+          title: "Signup Failed",
+          description: error.message || "An error occurred during signup",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Admin Account Created!",
+          description: "Your admin account has been created successfully.",
+        });
+        navigate("/login");
+      }
+    } catch (error) {
+      console.error("Signup error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-healthcare-gray">
       <Navigation />
@@ -170,7 +233,7 @@ const Signup = () => {
           </div>
 
           <Tabs defaultValue="patient" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="patient" className="flex items-center space-x-2">
                 <User className="h-4 w-4" />
                 <span>Patient</span>
@@ -178,6 +241,10 @@ const Signup = () => {
               <TabsTrigger value="doctor" className="flex items-center space-x-2">
                 <Stethoscope className="h-4 w-4" />
                 <span>Doctor</span>
+              </TabsTrigger>
+              <TabsTrigger value="admin" className="flex items-center space-x-2">
+                <Settings className="h-4 w-4" />
+                <span>Admin</span>
               </TabsTrigger>
             </TabsList>
 
@@ -401,6 +468,108 @@ const Signup = () => {
                       disabled={!doctorForm.agreeTerms || isSubmitting || loading}
                     >
                       {isSubmitting ? "Submitting Application..." : "Submit Doctor Application"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Admin Signup */}
+            <TabsContent value="admin">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Settings className="h-5 w-5 text-red-600" />
+                    <span>Admin Registration</span>
+                  </CardTitle>
+                  <CardDescription>
+                    Create an administrator account for system management
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleAdminSignup} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="admin-firstName">First Name</Label>
+                        <Input
+                          id="admin-firstName"
+                          type="text"
+                          placeholder="Admin"
+                          value={adminForm.firstName}
+                          onChange={(e) => setAdminForm({...adminForm, firstName: e.target.value})}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="admin-lastName">Last Name</Label>
+                        <Input
+                          id="admin-lastName"
+                          type="text"
+                          placeholder="User"
+                          value={adminForm.lastName}
+                          onChange={(e) => setAdminForm({...adminForm, lastName: e.target.value})}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-email">Email Address</Label>
+                      <Input
+                        id="admin-email"
+                        type="email"
+                        placeholder="admin@example.com"
+                        value={adminForm.email}
+                        onChange={(e) => setAdminForm({...adminForm, email: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-password">Password</Label>
+                      <Input
+                        id="admin-password"
+                        type="password"
+                        placeholder="Create a strong password"
+                        value={adminForm.password}
+                        onChange={(e) => setAdminForm({...adminForm, password: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-confirmPassword">Confirm Password</Label>
+                      <Input
+                        id="admin-confirmPassword"
+                        type="password"
+                        placeholder="Confirm your password"
+                        value={adminForm.confirmPassword}
+                        onChange={(e) => setAdminForm({...adminForm, confirmPassword: e.target.value})}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="admin-terms"
+                        checked={adminForm.agreeTerms}
+                        onCheckedChange={(checked) => setAdminForm({...adminForm, agreeTerms: checked as boolean})}
+                      />
+                      <Label htmlFor="admin-terms" className="text-sm">
+                        I agree to the{" "}
+                        <Link to="/terms" className="text-healthcare-blue hover:underline">
+                          Terms of Service
+                        </Link>{" "}
+                        and{" "}
+                        <Link to="/privacy" className="text-healthcare-blue hover:underline">
+                          Privacy Policy
+                        </Link>
+                      </Label>
+                    </div>
+
+                    <Button 
+                      type="submit" 
+                      className="w-full bg-red-600 hover:bg-red-700"
+                      disabled={!adminForm.agreeTerms || isSubmitting || loading}
+                    >
+                      {isSubmitting ? "Creating Account..." : "Create Admin Account"}
                     </Button>
                   </form>
                 </CardContent>
