@@ -57,24 +57,35 @@ const DoctorManagement = () => {
     }
 
     try {
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Create auth user with proper metadata
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: newDoctor.email,
         password: newDoctor.password,
-        options: {
-          data: {
-            first_name: newDoctor.firstName,
-            last_name: newDoctor.lastName,
-            role: 'doctor',
-            license_number: newDoctor.licenseNumber,
-            specialty: newDoctor.specialty,
-          }
+        email_confirm: true,
+        user_metadata: {
+          first_name: newDoctor.firstName,
+          last_name: newDoctor.lastName,
+          role: 'doctor'
         }
       });
 
       if (authError) throw authError;
 
       if (authData.user) {
+        // Create profile record
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            first_name: newDoctor.firstName,
+            last_name: newDoctor.lastName,
+            email: newDoctor.email,
+            role: 'doctor',
+            status: 'active'
+          });
+
+        if (profileError) throw profileError;
+
         // Create doctor record
         const { error: doctorError } = await supabase
           .from('doctors')
@@ -82,6 +93,7 @@ const DoctorManagement = () => {
             id: authData.user.id,
             license_number: newDoctor.licenseNumber,
             specialty: newDoctor.specialty,
+            verified: false
           });
 
         if (doctorError) throw doctorError;
@@ -106,7 +118,7 @@ const DoctorManagement = () => {
       console.error('Error adding doctor:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to add doctor",
+        description: error.message || "Failed to add doctor. You may need admin privileges to create users.",
         variant: "destructive",
       });
     }
@@ -131,7 +143,34 @@ const DoctorManagement = () => {
       console.error('Error updating doctor:', error);
       toast({
         title: "Error",
-        description: "Failed to update doctor status",
+        description: error.message || "Failed to update doctor status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateDoctorStatus = async (doctorId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', doctorId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Doctor Status Updated",
+        description: `Doctor account has been ${newStatus === 'active' ? 'activated' : 'deactivated'}`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['doctors'] });
+    } catch (error: any) {
+      console.error('Error updating doctor status:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update doctor status",
         variant: "destructive",
       });
     }
@@ -223,6 +262,8 @@ const DoctorManagement = () => {
                       <SelectItem value="Orthopedic">Orthopedic</SelectItem>
                       <SelectItem value="Pediatrician">Pediatrician</SelectItem>
                       <SelectItem value="Psychiatrist">Psychiatrist</SelectItem>
+                      <SelectItem value="Endocrinologist">Endocrinologist</SelectItem>
+                      <SelectItem value="Gastroenterologist">Gastroenterologist</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -250,7 +291,7 @@ const DoctorManagement = () => {
                 <TableHead>Email</TableHead>
                 <TableHead>Specialty</TableHead>
                 <TableHead>License</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Account Status</TableHead>
                 <TableHead>Verified</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -275,16 +316,32 @@ const DoctorManagement = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleDoctorVerification(doctor.id, doctor.verified)}
-                    >
-                      {doctor.verified ? 'Unverify' : 'Verify'}
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleDoctorVerification(doctor.id, doctor.verified)}
+                      >
+                        {doctor.verified ? 'Unverify' : 'Verify'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateDoctorStatus(doctor.id, doctor.profiles.status)}
+                      >
+                        {doctor.profiles.status === 'active' ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
+              {!doctors?.length && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-healthcare-text-secondary">
+                    No doctors found
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         )}

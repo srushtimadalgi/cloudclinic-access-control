@@ -25,16 +25,19 @@ import {
   Stethoscope
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useDoctorAccess } from "@/hooks/useDoctorAccess";
 import { useProfile } from "@/hooks/useProfile";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useMedicalReports } from "@/hooks/useMedicalReports";
 import { usePrescriptions } from "@/hooks/usePrescriptions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const PatientDashboard = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: profile } = useProfile();
   const { doctorAccess, loading: accessLoading, toggleDoctorAccess } = useDoctorAccess();
   const { notifications, markAsRead } = useNotifications();
@@ -45,8 +48,8 @@ const PatientDashboard = () => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
 
-  // Fetch all verified doctors
-  const { data: allDoctors } = useQuery({
+  // Fetch all verified doctors from the database
+  const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -65,18 +68,34 @@ const PatientDashboard = () => {
     }
   });
 
-  const [appointments, setAppointments] = useState([
-    {
-      id: 1,
-      doctorName: "Dr. Sarah Smith",
-      specialty: "General Practitioner",
-      date: "2024-01-20",
-      time: "10:00 AM",
-      status: "approved",
-      reason: "Regular checkup",
-      location: "CloudClinic Main Branch"
-    }
-  ]);
+  // Fetch appointments for the current user
+  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
+    queryKey: ['patient-appointments', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          id,
+          appointment_date,
+          appointment_time,
+          status,
+          notes,
+          doctor_id,
+          doctors!inner(
+            specialty,
+            profiles!inner(first_name, last_name)
+          )
+        `)
+        .eq('patient_id', user.id)
+        .order('appointment_date', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
 
   const [newAppointment, setNewAppointment] = useState({
     doctorId: "",
@@ -85,7 +104,7 @@ const PatientDashboard = () => {
     reason: ""
   });
 
-  const bookAppointment = () => {
+  const bookAppointment = async () => {
     if (!newAppointment.doctorId || !newAppointment.date || !newAppointment.time || !newAppointment.reason) {
       toast({
         title: "Error",
@@ -95,25 +114,44 @@ const PatientDashboard = () => {
       return;
     }
 
-    const doctor = allDoctors?.find(d => d.id === newAppointment.doctorId);
-    const appointment = {
-      id: appointments.length + 1,
-      doctorName: `Dr. ${doctor?.profiles.first_name} ${doctor?.profiles.last_name}` || "",
-      specialty: doctor?.specialty || "",
-      date: newAppointment.date,
-      time: newAppointment.time,
-      status: "pending",
-      reason: newAppointment.reason,
-      location: "CloudClinic Main Branch"
-    };
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to book an appointment",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    setAppointments([...appointments, appointment]);
-    setNewAppointment({ doctorId: "", date: "", time: "", reason: "" });
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .insert({
+          patient_id: user.id,
+          doctor_id: newAppointment.doctorId,
+          appointment_date: newAppointment.date,
+          appointment_time: newAppointment.time,
+          notes: newAppointment.reason,
+          status: 'pending'
+        });
 
-    toast({
-      title: "Appointment Booked",
-      description: "Your appointment has been submitted and is pending approval",
-    });
+      if (error) throw error;
+
+      setNewAppointment({ doctorId: "", date: "", time: "", reason: "" });
+      queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+
+      toast({
+        title: "Appointment Booked",
+        description: "Your appointment has been submitted and is pending approval",
+      });
+    } catch (error: any) {
+      console.error('Error booking appointment:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to book appointment",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleFileUpload = async () => {
@@ -134,21 +172,34 @@ const PatientDashboard = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "approved": return "bg-green-500";
+      case "confirmed": return "bg-green-500";
       case "pending": return "bg-yellow-500";
-      case "canceled": return "bg-red-500";
+      case "cancelled": return "bg-red-500";
+      case "completed": return "bg-blue-500";
       default: return "bg-gray-500";
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "approved": return <CheckCircle className="h-4 w-4" />;
+      case "confirmed": return <CheckCircle className="h-4 w-4" />;
       case "pending": return <Clock className="h-4 w-4" />;
-      case "canceled": return <XCircle className="h-4 w-4" />;
+      case "cancelled": return <XCircle className="h-4 w-4" />;
+      case "completed": return <CheckCircle className="h-4 w-4" />;
       default: return <Clock className="h-4 w-4" />;
     }
   };
+
+  if (doctorsLoading || appointmentsLoading) {
+    return (
+      <div className="min-h-screen bg-healthcare-gray flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-healthcare-blue mx-auto mb-4"></div>
+          <p className="text-healthcare-text-secondary">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-healthcare-gray">
@@ -188,7 +239,7 @@ const PatientDashboard = () => {
                 <div>
                   <p className="text-sm text-healthcare-text-secondary">Appointments</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {appointments.filter(apt => apt.status === "approved").length}
+                    {appointments.filter(apt => apt.status === "confirmed").length}
                   </p>
                 </div>
                 <CalendarIcon className="h-8 w-8 text-healthcare-blue" />
@@ -300,12 +351,12 @@ const PatientDashboard = () => {
                       className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
                     >
                       <option value="">Select time</option>
-                      <option value="9:00 AM">9:00 AM</option>
-                      <option value="10:00 AM">10:00 AM</option>
-                      <option value="11:00 AM">11:00 AM</option>
-                      <option value="2:00 PM">2:00 PM</option>
-                      <option value="3:00 PM">3:00 PM</option>
-                      <option value="4:00 PM">4:00 PM</option>
+                      <option value="09:00:00">9:00 AM</option>
+                      <option value="10:00:00">10:00 AM</option>
+                      <option value="11:00:00">11:00 AM</option>
+                      <option value="14:00:00">2:00 PM</option>
+                      <option value="15:00:00">3:00 PM</option>
+                      <option value="16:00:00">4:00 PM</option>
                     </select>
                   </div>
                   <div>
@@ -358,7 +409,6 @@ const PatientDashboard = () => {
 
           {/* Appointments Tab */}
           <TabsContent value="appointments">
-            
             <Card>
               <CardHeader>
                 <CardTitle>My Appointments</CardTitle>
@@ -373,7 +423,6 @@ const PatientDashboard = () => {
                       <TableHead>Time</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Location</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -381,13 +430,15 @@ const PatientDashboard = () => {
                       <TableRow key={appointment.id}>
                         <TableCell>
                           <div>
-                            <div className="font-medium">{appointment.doctorName}</div>
-                            <div className="text-sm text-healthcare-text-secondary">{appointment.specialty}</div>
+                            <div className="font-medium">
+                              Dr. {appointment.doctors.profiles.first_name} {appointment.doctors.profiles.last_name}
+                            </div>
+                            <div className="text-sm text-healthcare-text-secondary">{appointment.doctors.specialty}</div>
                           </div>
                         </TableCell>
-                        <TableCell>{appointment.date}</TableCell>
-                        <TableCell>{appointment.time}</TableCell>
-                        <TableCell>{appointment.reason}</TableCell>
+                        <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
+                        <TableCell>{appointment.appointment_time}</TableCell>
+                        <TableCell>{appointment.notes}</TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
                             {getStatusIcon(appointment.status)}
@@ -396,9 +447,15 @@ const PatientDashboard = () => {
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm">{appointment.location}</TableCell>
                       </TableRow>
                     ))}
+                    {appointments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-healthcare-text-secondary">
+                          No appointments found
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -568,7 +625,6 @@ const PatientDashboard = () => {
 
           {/* Privacy Control Tab */}
           <TabsContent value="privacy">
-            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
