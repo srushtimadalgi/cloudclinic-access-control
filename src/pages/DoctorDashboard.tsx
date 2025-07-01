@@ -2,43 +2,48 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import Navigation from "@/components/Navigation";
-import PatientManagement from "@/components/PatientManagement";
 import { 
   Calendar as CalendarIcon, 
-  Users, 
+  User, 
   FileText, 
   Activity,
   Clock,
   CheckCircle,
   XCircle,
   Plus,
+  Download,
   Stethoscope,
-  UserCheck,
-  Settings
+  Heart,
+  Users
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/contexts/AuthContext";
-import { useAppointments } from "@/hooks/useAppointments";
+import { useProfile } from "@/hooks/useProfile";
 
 const DoctorDashboard = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
-  const { appointments, loading: appointmentsLoading, updateAppointmentStatus, getWeeklyAppointments } = useAppointments();
-
+  const [isAddingAppointment, setIsAddingAppointment] = useState(false);
+  const [isAddingPrescription, setIsAddingPrescription] = useState(false);
+  const [newAppointment, setNewAppointment] = useState({
+    patientId: "",
+    date: "",
+    time: "",
+    notes: ""
+  });
   const [newPrescription, setNewPrescription] = useState({
     patientId: "",
     medication: "",
@@ -46,130 +51,107 @@ const DoctorDashboard = () => {
     duration: "",
     instructions: ""
   });
-  const [isPrescriptionDialogOpen, setIsPrescriptionDialogOpen] = useState(false);
 
-  const [newAppointment, setNewAppointment] = useState({
-    patientId: "",
-    appointmentDate: "",
-    appointmentTime: "",
-    notes: ""
-  });
-  const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false);
-
-  const [doctorInfo, setDoctorInfo] = useState({
-    specialty: "",
-    licenseNumber: ""
-  });
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
-
-  // Get weekly appointments for the doctor
-  const weeklyAppointments = getWeeklyAppointments().filter(apt => apt.doctor_id === user?.id);
-
-  // Fetch all patients for prescription and appointment dropdowns
-  const { data: patients } = useQuery({
-    queryKey: ['all-patients'],
+  // Fetch doctor's appointments
+  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
+    queryKey: ['doctor-appointments', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, email')
-        .eq('role', 'patient')
-        .eq('status', 'active');
-
-      if (error) throw error;
-      return data;
-    }
-  });
-
-  // Fetch doctor's detailed information
-  const { data: doctorProfile } = useQuery({
-    queryKey: ['doctor-profile', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
+      if (!user) return [];
       
       const { data, error } = await supabase
-        .from('doctors')
-        .select('specialty, license_number')
-        .eq('id', user.id)
-        .single();
+        .from('appointments')
+        .select(`
+          id,
+          appointment_date,
+          appointment_time,
+          status,
+          notes,
+          patient_id,
+          profiles!inner(first_name, last_name)
+        `)
+        .eq('doctor_id', user.id)
+        .order('appointment_date', { ascending: false });
 
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.id
+    enabled: !!user
   });
 
-  const createPrescription = async () => {
-    if (!newPrescription.patientId || !newPrescription.medication || 
-        !newPrescription.dosage || !newPrescription.duration) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to create prescriptions",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
+  // Fetch doctor's prescriptions
+  const { data: prescriptions = [], isLoading: prescriptionsLoading } = useQuery({
+    queryKey: ['doctor-prescriptions', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
         .from('prescriptions')
-        .insert({
-          patient_id: newPrescription.patientId,
-          doctor_id: user.id,
-          medication: newPrescription.medication,
-          dosage: newPrescription.dosage,
-          duration: newPrescription.duration,
-          instructions: newPrescription.instructions,
-          status: 'active'
-        });
+        .select(`
+          id,
+          medication,
+          dosage,
+          duration,
+          instructions,
+          status,
+          created_at,
+          patient_id,
+          profiles!inner(first_name, last_name)
+        `)
+        .eq('doctor_id', user.id)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
 
-      toast({
-        title: "Prescription Created",
-        description: "Prescription has been created successfully",
-      });
+  // Fetch patients
+  const { data: patients = [], isLoading: patientsLoading } = useQuery({
+    queryKey: ['patients'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'patient')
+        .eq('status', 'active')
+        .order('first_name', { ascending: true });
 
-      setNewPrescription({
-        patientId: "",
-        medication: "",
-        dosage: "",
-        duration: "",
-        instructions: ""
-      });
-      setIsPrescriptionDialogOpen(false);
-    } catch (error: any) {
-      console.error('Error creating prescription:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create prescription",
-        variant: "destructive",
-      });
+      if (error) throw error;
+      return data;
     }
-  };
+  });
+
+  // Fetch medical reports that doctor has access to
+  const { data: accessibleReports = [], isLoading: reportsLoading } = useQuery({
+    queryKey: ['accessible-reports', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('medical_reports')
+        .select(`
+          id,
+          title,
+          file_url,
+          file_type,
+          uploaded_at,
+          patient_id,
+          profiles!inner(first_name, last_name)
+        `)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
 
   const createAppointment = async () => {
-    if (!newAppointment.patientId || !newAppointment.appointmentDate || !newAppointment.appointmentTime) {
+    if (!newAppointment.patientId || !newAppointment.date || !newAppointment.time) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to create appointments",
         variant: "destructive",
       });
       return;
@@ -180,28 +162,23 @@ const DoctorDashboard = () => {
         .from('appointments')
         .insert({
           patient_id: newAppointment.patientId,
-          doctor_id: user.id,
-          appointment_date: newAppointment.appointmentDate,
-          appointment_time: newAppointment.appointmentTime,
+          doctor_id: user?.id,
+          appointment_date: newAppointment.date,
+          appointment_time: newAppointment.time,
           notes: newAppointment.notes,
           status: 'confirmed'
         });
 
       if (error) throw error;
 
+      setNewAppointment({ patientId: "", date: "", time: "", notes: "" });
+      setIsAddingAppointment(false);
+      queryClient.invalidateQueries({ queryKey: ['doctor-appointments'] });
+
       toast({
         title: "Appointment Created",
-        description: "Appointment has been scheduled successfully",
+        description: "The appointment has been scheduled successfully",
       });
-
-      setNewAppointment({
-        patientId: "",
-        appointmentDate: "",
-        appointmentTime: "",
-        notes: ""
-      });
-      setIsAppointmentDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['appointments'] });
     } catch (error: any) {
       console.error('Error creating appointment:', error);
       toast({
@@ -212,8 +189,8 @@ const DoctorDashboard = () => {
     }
   };
 
-  const updateDoctorProfile = async () => {
-    if (!user?.id || !doctorInfo.specialty || !doctorInfo.licenseNumber) {
+  const createPrescription = async () => {
+    if (!newPrescription.patientId || !newPrescription.medication || !newPrescription.dosage) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -223,33 +200,35 @@ const DoctorDashboard = () => {
     }
 
     try {
-      setIsUpdatingProfile(true);
-      
       const { error } = await supabase
-        .from('doctors')
-        .upsert({
-          id: user.id,
-          specialty: doctorInfo.specialty,
-          license_number: doctorInfo.licenseNumber
+        .from('prescriptions')
+        .insert({
+          patient_id: newPrescription.patientId,
+          doctor_id: user?.id,
+          medication: newPrescription.medication,
+          dosage: newPrescription.dosage,
+          duration: newPrescription.duration,
+          instructions: newPrescription.instructions,
+          status: 'active'
         });
 
       if (error) throw error;
 
-      toast({
-        title: "Profile Updated",
-        description: "Your doctor profile has been updated successfully",
-      });
+      setNewPrescription({ patientId: "", medication: "", dosage: "", duration: "", instructions: "" });
+      setIsAddingPrescription(false);
+      queryClient.invalidateQueries({ queryKey: ['doctor-prescriptions'] });
 
-      queryClient.invalidateQueries({ queryKey: ['doctor-profile', user.id] });
+      toast({
+        title: "Prescription Created",
+        description: "The prescription has been created and the patient will be notified",
+      });
     } catch (error: any) {
-      console.error('Error updating doctor profile:', error);
+      console.error('Error creating prescription:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update profile",
+        description: error.message || "Failed to create prescription",
         variant: "destructive",
       });
-    } finally {
-      setIsUpdatingProfile(false);
     }
   };
 
@@ -273,7 +252,7 @@ const DoctorDashboard = () => {
     }
   };
 
-  if (appointmentsLoading) {
+  if (appointmentsLoading || prescriptionsLoading || patientsLoading) {
     return (
       <div className="min-h-screen bg-healthcare-gray flex items-center justify-center">
         <div className="text-center">
@@ -291,22 +270,12 @@ const DoctorDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-healthcare-text-primary">
-                Doctor Dashboard
-              </h1>
-              <p className="text-healthcare-text-secondary mt-1">
-                Welcome back, Dr. {profile?.first_name} {profile?.last_name}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg p-4 shadow-sm">
-              <div className="flex items-center space-x-2">
-                <Stethoscope className="h-5 w-5 text-healthcare-blue" />
-                <span className="text-sm font-medium">Doctor Portal</span>
-              </div>
-            </div>
-          </div>
+          <h1 className="text-3xl font-bold text-healthcare-text-primary">
+            Doctor Dashboard
+          </h1>
+          <p className="text-healthcare-text-secondary mt-1">
+            Welcome back, Dr. {profile?.first_name} {profile?.last_name}
+          </p>
         </div>
 
         {/* Stats Cards */}
@@ -315,10 +284,8 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">This Week</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {weeklyAppointments.length}
-                  </p>
+                  <p className="text-sm text-healthcare-text-secondary">Total Appointments</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{appointments.length}</p>
                 </div>
                 <CalendarIcon className="h-8 w-8 text-healthcare-blue" />
               </div>
@@ -328,25 +295,12 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Pending</p>
+                  <p className="text-sm text-healthcare-text-secondary">Active Prescriptions</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {appointments.filter(apt => apt.status === "pending").length}
+                    {prescriptions.filter(p => p.status === "active").length}
                   </p>
                 </div>
-                <Clock className="h-8 w-8 text-healthcare-blue" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-healthcare-text-secondary">Confirmed</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {appointments.filter(apt => apt.status === "confirmed").length}
-                  </p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-healthcare-green" />
+                <FileText className="h-8 w-8 text-healthcare-green" />
               </div>
             </CardContent>
           </Card>
@@ -355,22 +309,32 @@ const DoctorDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-healthcare-text-secondary">Total Patients</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {patients?.length || 0}
-                  </p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{patients.length}</p>
                 </div>
                 <Users className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-healthcare-text-secondary">Medical Reports</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">{accessibleReports.length}</p>
+                </div>
+                <Heart className="h-8 w-8 text-red-500" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Main Content with Tabs */}
+        {/* Main Content */}
         <Tabs defaultValue="appointments" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="appointments">Appointments</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
             <TabsTrigger value="patients">Patients</TabsTrigger>
+            <TabsTrigger value="reports">Medical Reports</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
@@ -380,15 +344,10 @@ const DoctorDashboard = () => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="flex items-center space-x-2">
-                      <CalendarIcon className="h-5 w-5 text-healthcare-blue" />
-                      <span>Appointments</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Manage your appointments
-                    </CardDescription>
+                    <CardTitle>Appointments</CardTitle>
+                    <CardDescription>Manage your appointments</CardDescription>
                   </div>
-                  <Dialog open={isAppointmentDialogOpen} onOpenChange={setIsAppointmentDialogOpen}>
+                  <Dialog open={isAddingAppointment} onOpenChange={setIsAddingAppointment}>
                     <DialogTrigger asChild>
                       <Button>
                         <Plus className="h-4 w-4 mr-2" />
@@ -404,50 +363,57 @@ const DoctorDashboard = () => {
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
                         <div>
-                          <Label htmlFor="patient">Patient</Label>
-                          <Select onValueChange={(value) => setNewAppointment({...newAppointment, patientId: value})}>
+                          <Label htmlFor="patient">Patient *</Label>
+                          <Select value={newAppointment.patientId} onValueChange={(value) => setNewAppointment({...newAppointment, patientId: value})}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select patient" />
+                              <SelectValue placeholder="Select a patient" />
                             </SelectTrigger>
                             <SelectContent>
-                              {patients?.map(patient => (
+                              {patients.map(patient => (
                                 <SelectItem key={patient.id} value={patient.id}>
-                                  {patient.first_name} {patient.last_name} - {patient.email}
+                                  {patient.first_name} {patient.last_name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div>
-                          <Label htmlFor="appointmentDate">Date</Label>
+                          <Label htmlFor="date">Date *</Label>
                           <Input
-                            id="appointmentDate"
+                            id="date"
                             type="date"
-                            value={newAppointment.appointmentDate}
-                            onChange={(e) => setNewAppointment({...newAppointment, appointmentDate: e.target.value})}
+                            value={newAppointment.date}
+                            onChange={(e) => setNewAppointment({...newAppointment, date: e.target.value})}
                           />
                         </div>
                         <div>
-                          <Label htmlFor="appointmentTime">Time</Label>
-                          <Input
-                            id="appointmentTime"
-                            type="time"
-                            value={newAppointment.appointmentTime}
-                            onChange={(e) => setNewAppointment({...newAppointment, appointmentTime: e.target.value})}
-                          />
+                          <Label htmlFor="time">Time *</Label>
+                          <Select value={newAppointment.time} onValueChange={(value) => setNewAppointment({...newAppointment, time: value})}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select time" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="09:00:00">9:00 AM</SelectItem>
+                              <SelectItem value="10:00:00">10:00 AM</SelectItem>
+                              <SelectItem value="11:00:00">11:00 AM</SelectItem>
+                              <SelectItem value="14:00:00">2:00 PM</SelectItem>
+                              <SelectItem value="15:00:00">3:00 PM</SelectItem>
+                              <SelectItem value="16:00:00">4:00 PM</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div>
-                          <Label htmlFor="notes">Notes (Optional)</Label>
+                          <Label htmlFor="notes">Notes</Label>
                           <Textarea
                             id="notes"
                             value={newAppointment.notes}
                             onChange={(e) => setNewAppointment({...newAppointment, notes: e.target.value})}
-                            placeholder="Appointment notes or reason"
+                            placeholder="Any additional notes..."
                           />
                         </div>
                       </div>
                       <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setIsAppointmentDialogOpen(false)}>
+                        <Button variant="outline" onClick={() => setIsAddingAppointment(false)}>
                           Cancel
                         </Button>
                         <Button onClick={createAppointment}>
@@ -465,16 +431,15 @@ const DoctorDashboard = () => {
                       <TableHead>Patient</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
-                      <TableHead>Reason</TableHead>
+                      <TableHead>Notes</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {appointments.filter(apt => apt.doctor_id === user?.id).map((appointment) => (
+                    {appointments.map((appointment) => (
                       <TableRow key={appointment.id}>
                         <TableCell className="font-medium">
-                          {appointment.patient_name || "Patient"}
+                          {appointment.profiles.first_name} {appointment.profiles.last_name}
                         </TableCell>
                         <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
                         <TableCell>{appointment.appointment_time}</TableCell>
@@ -487,42 +452,11 @@ const DoctorDashboard = () => {
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex space-x-2">
-                            {appointment.status === "pending" && (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => updateAppointmentStatus(appointment.id, "confirmed")}
-                                >
-                                  Confirm
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => updateAppointmentStatus(appointment.id, "cancelled")}
-                                >
-                                  Cancel
-                                </Button>
-                              </>
-                            )}
-                            {appointment.status === "confirmed" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => updateAppointmentStatus(appointment.id, "completed")}
-                              >
-                                Complete
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
                       </TableRow>
                     ))}
-                    {appointments.filter(apt => apt.doctor_id === user?.id).length === 0 && (
+                    {appointments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-healthcare-text-secondary">
+                        <TableCell colSpan={5} className="text-center py-8 text-healthcare-text-secondary">
                           No appointments found
                         </TableCell>
                       </TableRow>
@@ -539,55 +473,50 @@ const DoctorDashboard = () => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="flex items-center space-x-2">
-                      <FileText className="h-5 w-5 text-healthcare-blue" />
-                      <span>Prescriptions</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Create and manage patient prescriptions
-                    </CardDescription>
+                    <CardTitle>Prescriptions</CardTitle>
+                    <CardDescription>Manage patient prescriptions</CardDescription>
                   </div>
-                  <Dialog open={isPrescriptionDialogOpen} onOpenChange={setIsPrescriptionDialogOpen}>
+                  <Dialog open={isAddingPrescription} onOpenChange={setIsAddingPrescription}>
                     <DialogTrigger asChild>
                       <Button>
                         <Plus className="h-4 w-4 mr-2" />
-                        New Prescription
+                        Add Prescription
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-[425px]">
                       <DialogHeader>
-                        <DialogTitle>Create Prescription</DialogTitle>
+                        <DialogTitle>Add New Prescription</DialogTitle>
                         <DialogDescription>
                           Create a new prescription for a patient
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
                         <div>
-                          <Label htmlFor="patient">Patient</Label>
-                          <Select onValueChange={(value) => setNewPrescription({...newPrescription, patientId: value})}>
+                          <Label htmlFor="patient">Patient *</Label>
+                          <Select value={newPrescription.patientId} onValueChange={(value) => setNewPrescription({...newPrescription, patientId: value})}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select patient" />
+                              <SelectValue placeholder="Select a patient" />
                             </SelectTrigger>
                             <SelectContent>
-                              {patients?.map(patient => (
+                              {patients.map(patient => (
                                 <SelectItem key={patient.id} value={patient.id}>
-                                  {patient.first_name} {patient.last_name} - {patient.email}
+                                  {patient.first_name} {patient.last_name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div>
-                          <Label htmlFor="medication">Medication</Label>
+                          <Label htmlFor="medication">Medication *</Label>
                           <Input
                             id="medication"
                             value={newPrescription.medication}
                             onChange={(e) => setNewPrescription({...newPrescription, medication: e.target.value})}
-                            placeholder="e.g., Amoxicillin"
+                            placeholder="Enter medication name"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="dosage">Dosage</Label>
+                          <Label htmlFor="dosage">Dosage *</Label>
                           <Input
                             id="dosage"
                             value={newPrescription.dosage}
@@ -605,21 +534,21 @@ const DoctorDashboard = () => {
                           />
                         </div>
                         <div>
-                          <Label htmlFor="instructions">Instructions (Optional)</Label>
-                          <Input
+                          <Label htmlFor="instructions">Instructions</Label>
+                          <Textarea
                             id="instructions"
                             value={newPrescription.instructions}
                             onChange={(e) => setNewPrescription({...newPrescription, instructions: e.target.value})}
-                            placeholder="e.g., Take with food"
+                            placeholder="Additional instructions for the patient"
                           />
                         </div>
                       </div>
                       <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setIsPrescriptionDialogOpen(false)}>
+                        <Button variant="outline" onClick={() => setIsAddingPrescription(false)}>
                           Cancel
                         </Button>
                         <Button onClick={createPrescription}>
-                          Create Prescription
+                          Add Prescription
                         </Button>
                       </div>
                     </DialogContent>
@@ -627,10 +556,36 @@ const DoctorDashboard = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-healthcare-text-secondary">
-                  <FileText className="h-12 w-12 mx-auto mb-4 text-healthcare-text-secondary" />
-                  <p>Prescription management will be displayed here</p>
-                  <p className="text-sm">Use the "New Prescription" button to create prescriptions</p>
+                <div className="space-y-4">
+                  {prescriptions.map((prescription) => (
+                    <div key={prescription.id} className="p-4 border border-healthcare-gray rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-healthcare-text-primary">
+                          {prescription.medication}
+                        </h4>
+                        <Badge className={prescription.status === "active" ? "bg-healthcare-green" : "bg-gray-500"}>
+                          {prescription.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-healthcare-text-secondary">
+                        <strong>Patient:</strong> {prescription.profiles.first_name} {prescription.profiles.last_name}
+                      </p>
+                      <p className="text-sm text-healthcare-text-secondary">
+                        <strong>Dosage:</strong> {prescription.dosage} • <strong>Duration:</strong> {prescription.duration}
+                      </p>
+                      {prescription.instructions && (
+                        <p className="text-sm text-healthcare-text-secondary">
+                          <strong>Instructions:</strong> {prescription.instructions}
+                        </p>
+                      )}
+                      <p className="text-sm text-healthcare-text-secondary mt-2">
+                        Prescribed on {new Date(prescription.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                  {prescriptions.length === 0 && (
+                    <p className="text-center text-healthcare-text-secondary py-8">No prescriptions found</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -638,62 +593,135 @@ const DoctorDashboard = () => {
 
           {/* Patients Tab */}
           <TabsContent value="patients">
-            <PatientManagement />
+            <Card>
+              <CardHeader>
+                <CardTitle>Patients</CardTitle>
+                <CardDescription>View all patients in the system</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {patients.map((patient) => (
+                    <Card key={patient.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-healthcare-blue p-3 rounded-full">
+                            <User className="h-8 w-8 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-healthcare-text-primary">
+                              {patient.first_name} {patient.last_name}
+                            </h3>
+                            <p className="text-sm text-healthcare-text-secondary">{patient.email}</p>
+                            <Badge variant={patient.status === "active" ? "default" : "secondary"} className="mt-1">
+                              {patient.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                {patients.length === 0 && (
+                  <p className="text-center text-healthcare-text-secondary py-8">No patients found</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Medical Reports Tab */}
+          <TabsContent value="reports">
+            <Card>
+              <CardHeader>
+                <CardTitle>Medical Reports</CardTitle>
+                <CardDescription>Access patient medical reports (requires patient permission)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {accessibleReports.map((report) => (
+                    <div key={report.id} className="flex items-center justify-between p-4 border border-healthcare-gray rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <FileText className="h-8 w-8 text-healthcare-blue" />
+                        <div>
+                          <h4 className="font-medium text-healthcare-text-primary">{report.title}</h4>
+                          <p className="text-sm text-healthcare-text-secondary">
+                            Patient: {report.profiles.first_name} {report.profiles.last_name}
+                          </p>
+                          <p className="text-sm text-healthcare-text-secondary">
+                            {report.file_type} • {new Date(report.uploaded_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={report.file_url} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-4 w-4 mr-2" />
+                          View
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                  {accessibleReports.length === 0 && (
+                    <div className="text-center py-8">
+                      <FileText className="h-12 w-12 text-healthcare-text-secondary mx-auto mb-4" />
+                      <p className="text-healthcare-text-secondary">No accessible medical reports found</p>
+                      <p className="text-sm text-healthcare-text-secondary mt-2">
+                        Patients need to grant you access to view their medical reports
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Profile Tab */}
           <TabsContent value="profile">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Settings className="h-5 w-5 text-healthcare-blue" />
-                  <span>Doctor Profile</span>
-                </CardTitle>
-                <CardDescription>
-                  Update your professional information
-                </CardDescription>
+                <CardTitle>Doctor Profile</CardTitle>
+                <CardDescription>Your profile information</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="specialty">Specialty</Label>
-                    <Select 
-                      value={doctorInfo.specialty || doctorProfile?.specialty || ""}
-                      onValueChange={(value) => setDoctorInfo({...doctorInfo, specialty: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your specialty" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="General Practitioner">General Practitioner</SelectItem>
-                        <SelectItem value="Cardiologist">Cardiologist</SelectItem>
-                        <SelectItem value="Dermatologist">Dermatologist</SelectItem>
-                        <SelectItem value="Neurologist">Neurologist</SelectItem>
-                        <SelectItem value="Orthopedic">Orthopedic</SelectItem>
-                        <SelectItem value="Pediatrician">Pediatrician</SelectItem>
-                        <SelectItem value="Psychiatrist">Psychiatrist</SelectItem>
-                        <SelectItem value="Endocrinologist">Endocrinologist</SelectItem>
-                        <SelectItem value="Gastroenterologist">Gastroenterologist</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      value={profile?.first_name || ''}
+                      readOnly
+                    />
                   </div>
                   <div>
-                    <Label htmlFor="licenseNumber">License Number</Label>
+                    <Label htmlFor="lastName">Last Name</Label>
                     <Input
-                      id="licenseNumber"
-                      value={doctorInfo.licenseNumber || doctorProfile?.license_number || ""}
-                      onChange={(e) => setDoctorInfo({...doctorInfo, licenseNumber: e.target.value})}
-                      placeholder="Enter your medical license number"
+                      id="lastName"
+                      value={profile?.last_name || ''}
+                      readOnly
                     />
                   </div>
                 </div>
-                <div className="flex justify-end">
-                  <Button 
-                    onClick={updateDoctorProfile}
-                    disabled={isUpdatingProfile}
-                  >
-                    {isUpdatingProfile ? "Updating..." : "Update Profile"}
-                  </Button>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    value={profile?.email || ''}
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="role">Role</Label>
+                  <Input
+                    id="role"
+                    value={profile?.role || ''}
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <Input
+                    id="status"
+                    value={profile?.status || ''}
+                    readOnly
+                  />
                 </div>
               </CardContent>
             </Card>

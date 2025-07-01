@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +48,7 @@ const PatientDashboard = () => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
 
-  // Fetch all verified doctors from the database
+  // Fetch all verified doctors with real-time updates
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
@@ -60,10 +60,17 @@ const PatientDashboard = () => {
           specialty,
           verified,
           license_number,
-          profiles!inner(first_name, last_name, status)
+          profiles!inner(
+            id,
+            first_name, 
+            last_name, 
+            status,
+            email
+          )
         `)
         .eq('profiles.status', 'active')
-        .eq('verified', true);
+        .eq('verified', true)
+        .order('profiles.first_name', { ascending: true });
 
       if (error) {
         console.error('Error fetching doctors:', error);
@@ -72,7 +79,9 @@ const PatientDashboard = () => {
       
       console.log('Fetched doctors:', data);
       return data;
-    }
+    },
+    refetchInterval: 5000, // Refetch every 5 seconds to get real-time updates
+    refetchIntervalInBackground: true
   });
 
   // Fetch appointments for the current user
@@ -209,6 +218,41 @@ const PatientDashboard = () => {
     }
   };
 
+  // Real-time subscription for doctor updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('doctor-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctors'
+        },
+        () => {
+          console.log('Doctor data changed, refetching...');
+          queryClient.invalidateQueries({ queryKey: ['all-doctors'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        },
+        () => {
+          console.log('Profile data changed, refetching...');
+          queryClient.invalidateQueries({ queryKey: ['all-doctors'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   if (doctorsLoading || appointmentsLoading) {
     return (
       <div className="min-h-screen bg-healthcare-gray flex items-center justify-center">
@@ -306,12 +350,12 @@ const PatientDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Notifications</p>
+                  <p className="text-sm text-healthcare-text-secondary">Available Doctors</p>
                   <p className="text-2xl font-bold text-healthcare-text-primary">
-                    {notifications.filter(n => !n.read).length}
+                    {allDoctors?.length || 0}
                   </p>
                 </div>
-                <Bell className="h-8 w-8 text-healthcare-blue" />
+                <Stethoscope className="h-8 w-8 text-healthcare-blue" />
               </div>
             </CardContent>
           </Card>
@@ -343,7 +387,7 @@ const PatientDashboard = () => {
                     <select
                       value={newAppointment.doctorId}
                       onChange={(e) => setNewAppointment({...newAppointment, doctorId: e.target.value})}
-                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
+                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md bg-white"
                     >
                       <option value="">Choose a doctor</option>
                       {allDoctors?.map(doctor => (
@@ -356,7 +400,16 @@ const PatientDashboard = () => {
                       <p className="text-sm text-healthcare-text-secondary mt-1">Loading doctors...</p>
                     )}
                     {!doctorsLoading && (!allDoctors || allDoctors.length === 0) && (
-                      <p className="text-sm text-red-500 mt-1">No verified doctors available at the moment</p>
+                      <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-sm text-yellow-800">
+                          <strong>No verified doctors available.</strong> Please contact the admin to verify doctor accounts.
+                        </p>
+                      </div>
+                    )}
+                    {allDoctors && allDoctors.length > 0 && (
+                      <p className="text-sm text-green-600 mt-1">
+                        {allDoctors.length} verified doctor{allDoctors.length !== 1 ? 's' : ''} available
+                      </p>
                     )}
                   </div>
                   
@@ -373,7 +426,7 @@ const PatientDashboard = () => {
                     <select
                       value={newAppointment.time}
                       onChange={(e) => setNewAppointment({...newAppointment, time: e.target.value})}
-                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md"
+                      className="w-full mt-1 p-2 border border-healthcare-gray rounded-md bg-white"
                     >
                       <option value="">Select time</option>
                       <option value="09:00:00">9:00 AM</option>
@@ -392,7 +445,11 @@ const PatientDashboard = () => {
                       placeholder="e.g., Regular checkup, Follow-up..."
                     />
                   </div>
-                  <Button onClick={bookAppointment} className="w-full">
+                  <Button 
+                    onClick={bookAppointment} 
+                    className="w-full"
+                    disabled={!allDoctors || allDoctors.length === 0}
+                  >
                     Book Appointment
                   </Button>
                 </CardContent>
@@ -409,22 +466,29 @@ const PatientDashboard = () => {
                     {notifications.slice(0, 5).map((notification) => (
                       <div 
                         key={notification.id} 
-                        className={`p-3 rounded-lg border ${!notification.read ? 'bg-healthcare-blue-light border-healthcare-blue' : 'bg-gray-50'}`}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          !notification.read 
+                            ? 'bg-healthcare-blue-light border-healthcare-blue' 
+                            : 'bg-gray-50 border-gray-200'
+                        }`}
                         onClick={() => !notification.read && markAsRead(notification.id)}
                       >
                         <div className="flex items-start justify-between">
-                          <div>
+                          <div className="flex-1">
                             <p className="text-sm font-medium">{notification.title}</p>
-                            <p className="text-xs text-healthcare-text-secondary">{notification.message}</p>
+                            <p className="text-xs text-healthcare-text-secondary mt-1">{notification.message}</p>
                           </div>
                           {!notification.read && (
-                            <div className="w-2 h-2 bg-healthcare-blue rounded-full"></div>
+                            <div className="w-3 h-3 bg-healthcare-blue rounded-full flex-shrink-0 ml-2"></div>
                           )}
                         </div>
                       </div>
                     ))}
                     {notifications.length === 0 && (
-                      <p className="text-center text-healthcare-text-secondary py-4">No notifications</p>
+                      <div className="text-center py-8">
+                        <Bell className="h-12 w-12 text-healthcare-text-secondary mx-auto mb-4" />
+                        <p className="text-healthcare-text-secondary">No notifications</p>
+                      </div>
                     )}
                   </div>
                 </CardContent>
@@ -611,42 +675,74 @@ const PatientDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* All Doctors Tab */}
+          {/* All Doctors Tab - Updated */}
           <TabsContent value="doctors">
             <Card>
               <CardHeader>
                 <CardTitle>Available Doctors</CardTitle>
-                <CardDescription>Browse all available doctors in the system</CardDescription>
+                <CardDescription>
+                  Browse all verified doctors in the system
+                  {allDoctors && allDoctors.length > 0 && (
+                    <span className="text-green-600 font-medium ml-2">
+                      ({allDoctors.length} doctor{allDoctors.length !== 1 ? 's' : ''} available)
+                    </span>
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {allDoctors?.map((doctor) => (
-                    <Card key={doctor.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-6">
-                        <div className="flex items-center space-x-3">
-                          <div className="bg-healthcare-blue p-3 rounded-full">
-                            <Stethoscope className="h-8 w-8 text-white" />
+                {doctorsLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-healthcare-blue mx-auto mb-4"></div>
+                    <p className="text-healthcare-text-secondary">Loading doctors...</p>
+                  </div>
+                ) : !allDoctors || allDoctors.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Stethoscope className="h-16 w-16 text-healthcare-text-secondary mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-healthcare-text-primary mb-2">No Verified Doctors Available</h3>
+                    <p className="text-healthcare-text-secondary mb-4">
+                      There are currently no verified doctors in the system.
+                    </p>
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-w-md mx-auto">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Note:</strong> Doctors need to be verified by an administrator before they appear here.
+                        Please contact your administrator if you're expecting to see doctors listed.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {allDoctors.map((doctor) => (
+                      <Card key={doctor.id} className="hover:shadow-lg transition-shadow border-2 hover:border-healthcare-blue">
+                        <CardContent className="p-6">
+                          <div className="flex items-start space-x-3">
+                            <div className="bg-healthcare-blue p-3 rounded-full flex-shrink-0">
+                              <Stethoscope className="h-8 w-8 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-healthcare-text-primary text-lg">
+                                Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
+                              </h3>
+                              <p className="text-healthcare-text-secondary font-medium">{doctor.specialty}</p>
+                              <p className="text-xs text-healthcare-text-secondary mt-1">
+                                License: {doctor.license_number}
+                              </p>
+                              <p className="text-xs text-healthcare-text-secondary">
+                                {doctor.profiles.email}
+                              </p>
+                              <div className="flex items-center space-x-2 mt-2">
+                                <Badge variant={doctor.verified ? "default" : "secondary"}>
+                                  {doctor.verified ? "✓ Verified" : "Unverified"}
+                                </Badge>
+                                <Badge variant={doctor.profiles.status === "active" ? "default" : "secondary"}>
+                                  {doctor.profiles.status}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-semibold text-healthcare-text-primary">
-                              Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
-                            </h3>
-                            <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
-                            <p className="text-xs text-healthcare-text-secondary">License: {doctor.license_number}</p>
-                            <Badge variant={doctor.verified ? "default" : "secondary"} className="mt-1">
-                              {doctor.verified ? "Verified" : "Unverified"}
-                            </Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-                {!allDoctors?.length && !doctorsLoading && (
-                  <p className="text-center text-healthcare-text-secondary py-8">No verified doctors available</p>
-                )}
-                {doctorsLoading && (
-                  <p className="text-center text-healthcare-text-secondary py-8">Loading doctors...</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
