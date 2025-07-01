@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import Navigation from "@/components/Navigation";
 import PatientManagement from "@/components/PatientManagement";
 import { 
@@ -20,7 +21,9 @@ import {
   CheckCircle,
   XCircle,
   Plus,
-  Stethoscope
+  Stethoscope,
+  UserCheck,
+  Settings
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,10 +48,24 @@ const DoctorDashboard = () => {
   });
   const [isPrescriptionDialogOpen, setIsPrescriptionDialogOpen] = useState(false);
 
+  const [newAppointment, setNewAppointment] = useState({
+    patientId: "",
+    appointmentDate: "",
+    appointmentTime: "",
+    notes: ""
+  });
+  const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false);
+
+  const [doctorInfo, setDoctorInfo] = useState({
+    specialty: "",
+    licenseNumber: ""
+  });
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
   // Get weekly appointments for the doctor
   const weeklyAppointments = getWeeklyAppointments().filter(apt => apt.doctor_id === user?.id);
 
-  // Fetch all patients for prescription dropdown
+  // Fetch all patients for prescription and appointment dropdowns
   const { data: patients } = useQuery({
     queryKey: ['all-patients'],
     queryFn: async () => {
@@ -61,6 +78,24 @@ const DoctorDashboard = () => {
       if (error) throw error;
       return data;
     }
+  });
+
+  // Fetch doctor's detailed information
+  const { data: doctorProfile } = useQuery({
+    queryKey: ['doctor-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('specialty, license_number')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
   });
 
   const createPrescription = async () => {
@@ -118,6 +153,103 @@ const DoctorDashboard = () => {
         description: error.message || "Failed to create prescription",
         variant: "destructive",
       });
+    }
+  };
+
+  const createAppointment = async () => {
+    if (!newAppointment.patientId || !newAppointment.appointmentDate || !newAppointment.appointmentTime) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to create appointments",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .insert({
+          patient_id: newAppointment.patientId,
+          doctor_id: user.id,
+          appointment_date: newAppointment.appointmentDate,
+          appointment_time: newAppointment.appointmentTime,
+          notes: newAppointment.notes,
+          status: 'confirmed'
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Appointment Created",
+        description: "Appointment has been scheduled successfully",
+      });
+
+      setNewAppointment({
+        patientId: "",
+        appointmentDate: "",
+        appointmentTime: "",
+        notes: ""
+      });
+      setIsAppointmentDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    } catch (error: any) {
+      console.error('Error creating appointment:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create appointment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateDoctorProfile = async () => {
+    if (!user?.id || !doctorInfo.specialty || !doctorInfo.licenseNumber) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsUpdatingProfile(true);
+      
+      const { error } = await supabase
+        .from('doctors')
+        .upsert({
+          id: user.id,
+          specialty: doctorInfo.specialty,
+          license_number: doctorInfo.licenseNumber
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Profile Updated",
+        description: "Your doctor profile has been updated successfully",
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['doctor-profile', user.id] });
+    } catch (error: any) {
+      console.error('Error updating doctor profile:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingProfile(false);
     }
   };
 
@@ -235,23 +367,96 @@ const DoctorDashboard = () => {
 
         {/* Main Content with Tabs */}
         <Tabs defaultValue="appointments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="appointments">Appointments</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
             <TabsTrigger value="patients">Patients</TabsTrigger>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
           {/* Appointments Tab */}
           <TabsContent value="appointments">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <CalendarIcon className="h-5 w-5 text-healthcare-blue" />
-                  <span>Weekly Appointments</span>
-                </CardTitle>
-                <CardDescription>
-                  Manage your appointments for this week
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center space-x-2">
+                      <CalendarIcon className="h-5 w-5 text-healthcare-blue" />
+                      <span>Appointments</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Manage your appointments
+                    </CardDescription>
+                  </div>
+                  <Dialog open={isAppointmentDialogOpen} onOpenChange={setIsAppointmentDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Schedule Appointment
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[425px]">
+                      <DialogHeader>
+                        <DialogTitle>Schedule New Appointment</DialogTitle>
+                        <DialogDescription>
+                          Create a new appointment with a patient
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div>
+                          <Label htmlFor="patient">Patient</Label>
+                          <Select onValueChange={(value) => setNewAppointment({...newAppointment, patientId: value})}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select patient" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {patients?.map(patient => (
+                                <SelectItem key={patient.id} value={patient.id}>
+                                  {patient.first_name} {patient.last_name} - {patient.email}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="appointmentDate">Date</Label>
+                          <Input
+                            id="appointmentDate"
+                            type="date"
+                            value={newAppointment.appointmentDate}
+                            onChange={(e) => setNewAppointment({...newAppointment, appointmentDate: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="appointmentTime">Time</Label>
+                          <Input
+                            id="appointmentTime"
+                            type="time"
+                            value={newAppointment.appointmentTime}
+                            onChange={(e) => setNewAppointment({...newAppointment, appointmentTime: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="notes">Notes (Optional)</Label>
+                          <Textarea
+                            id="notes"
+                            value={newAppointment.notes}
+                            onChange={(e) => setNewAppointment({...newAppointment, notes: e.target.value})}
+                            placeholder="Appointment notes or reason"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="outline" onClick={() => setIsAppointmentDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={createAppointment}>
+                          Schedule Appointment
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -266,7 +471,7 @@ const DoctorDashboard = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {weeklyAppointments.map((appointment) => (
+                    {appointments.filter(apt => apt.doctor_id === user?.id).map((appointment) => (
                       <TableRow key={appointment.id}>
                         <TableCell className="font-medium">
                           {appointment.patient_name || "Patient"}
@@ -315,10 +520,10 @@ const DoctorDashboard = () => {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {weeklyAppointments.length === 0 && (
+                    {appointments.filter(apt => apt.doctor_id === user?.id).length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-healthcare-text-secondary">
-                          No appointments scheduled for this week
+                          No appointments found
                         </TableCell>
                       </TableRow>
                     )}
@@ -434,6 +639,64 @@ const DoctorDashboard = () => {
           {/* Patients Tab */}
           <TabsContent value="patients">
             <PatientManagement />
+          </TabsContent>
+
+          {/* Profile Tab */}
+          <TabsContent value="profile">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Settings className="h-5 w-5 text-healthcare-blue" />
+                  <span>Doctor Profile</span>
+                </CardTitle>
+                <CardDescription>
+                  Update your professional information
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="specialty">Specialty</Label>
+                    <Select 
+                      value={doctorInfo.specialty || doctorProfile?.specialty || ""}
+                      onValueChange={(value) => setDoctorInfo({...doctorInfo, specialty: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your specialty" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="General Practitioner">General Practitioner</SelectItem>
+                        <SelectItem value="Cardiologist">Cardiologist</SelectItem>
+                        <SelectItem value="Dermatologist">Dermatologist</SelectItem>
+                        <SelectItem value="Neurologist">Neurologist</SelectItem>
+                        <SelectItem value="Orthopedic">Orthopedic</SelectItem>
+                        <SelectItem value="Pediatrician">Pediatrician</SelectItem>
+                        <SelectItem value="Psychiatrist">Psychiatrist</SelectItem>
+                        <SelectItem value="Endocrinologist">Endocrinologist</SelectItem>
+                        <SelectItem value="Gastroenterologist">Gastroenterologist</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="licenseNumber">License Number</Label>
+                    <Input
+                      id="licenseNumber"
+                      value={doctorInfo.licenseNumber || doctorProfile?.license_number || ""}
+                      onChange={(e) => setDoctorInfo({...doctorInfo, licenseNumber: e.target.value})}
+                      placeholder="Enter your medical license number"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button 
+                    onClick={updateDoctorProfile}
+                    disabled={isUpdatingProfile}
+                  >
+                    {isUpdatingProfile ? "Updating..." : "Update Profile"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

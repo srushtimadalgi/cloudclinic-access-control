@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { UserPlus, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +21,8 @@ const PatientManagement = () => {
     firstName: "",
     lastName: "",
     email: "",
-    password: ""
+    joiningDate: "",
+    patientRecord: ""
   });
 
   const { data: patients, isLoading } = useQuery({
@@ -38,21 +40,20 @@ const PatientManagement = () => {
   });
 
   const addPatient = async () => {
-    if (!newPatient.firstName || !newPatient.lastName || !newPatient.email || !newPatient.password) {
+    if (!newPatient.firstName || !newPatient.lastName || !newPatient.email) {
       toast({
         title: "Error",
-        description: "Please fill in all fields",
+        description: "Please fill in all required fields (Name and Email)",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Create auth user without email confirmation
+      // Create auth user without password - they'll need to reset password to access
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: newPatient.email,
-        password: newPatient.password,
-        email_confirm: true, // This bypasses email confirmation
+        email_confirm: true,
         user_metadata: {
           first_name: newPatient.firstName,
           last_name: newPatient.lastName,
@@ -79,14 +80,15 @@ const PatientManagement = () => {
 
         toast({
           title: "Patient Added",
-          description: `${newPatient.firstName} ${newPatient.lastName} has been added successfully`,
+          description: `${newPatient.firstName} ${newPatient.lastName} has been added successfully. They will need to reset their password to access the system.`,
         });
 
         setNewPatient({
           firstName: "",
           lastName: "",
           email: "",
-          password: ""
+          joiningDate: "",
+          patientRecord: ""
         });
         setIsAddingPatient(false);
         queryClient.invalidateQueries({ queryKey: ['patients'] });
@@ -95,7 +97,7 @@ const PatientManagement = () => {
       console.error('Error adding patient:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to add patient. Make sure you have the required privileges.",
+        description: error.message || "Failed to add patient",
         variant: "destructive",
       });
     }
@@ -152,44 +154,57 @@ const PatientManagement = () => {
               <DialogHeader>
                 <DialogTitle>Add New Patient</DialogTitle>
                 <DialogDescription>
-                  Create a new patient account (no email confirmation required)
+                  Create a new patient record (no password required - they'll need to reset password to access)
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="firstName">First Name</Label>
+                    <Label htmlFor="firstName">First Name *</Label>
                     <Input
                       id="firstName"
                       value={newPatient.firstName}
                       onChange={(e) => setNewPatient({...newPatient, firstName: e.target.value})}
+                      placeholder="Enter first name"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="lastName">Last Name</Label>
+                    <Label htmlFor="lastName">Last Name *</Label>
                     <Input
                       id="lastName"
                       value={newPatient.lastName}
                       onChange={(e) => setNewPatient({...newPatient, lastName: e.target.value})}
+                      placeholder="Enter last name"
                     />
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Email *</Label>
                   <Input
                     id="email"
                     type="email"
                     value={newPatient.email}
                     onChange={(e) => setNewPatient({...newPatient, email: e.target.value})}
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="joiningDate">Joining Date (Optional)</Label>
                   <Input
-                    id="password"
-                    type="password"
-                    value={newPatient.password}
-                    onChange={(e) => setNewPatient({...newPatient, password: e.target.value})}
+                    id="joiningDate"
+                    type="date"
+                    value={newPatient.joiningDate}
+                    onChange={(e) => setNewPatient({...newPatient, joiningDate: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="patientRecord">Patient Record (Optional)</Label>
+                  <Textarea
+                    id="patientRecord"
+                    value={newPatient.patientRecord}
+                    onChange={(e) => setNewPatient({...newPatient, patientRecord: e.target.value})}
+                    placeholder="Enter patient medical history or notes"
+                    rows={3}
                   />
                 </div>
               </div>
