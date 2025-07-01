@@ -52,18 +52,25 @@ const PatientDashboard = () => {
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
+      console.log('Fetching all verified doctors...');
       const { data, error } = await supabase
         .from('doctors')
         .select(`
           id,
           specialty,
           verified,
+          license_number,
           profiles!inner(first_name, last_name, status)
         `)
         .eq('profiles.status', 'active')
         .eq('verified', true);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching doctors:', error);
+        throw error;
+      }
+      
+      console.log('Fetched doctors:', data);
       return data;
     }
   });
@@ -124,6 +131,15 @@ const PatientDashboard = () => {
     }
 
     try {
+      console.log('Booking appointment:', {
+        patient_id: user.id,
+        doctor_id: newAppointment.doctorId,
+        appointment_date: newAppointment.date,
+        appointment_time: newAppointment.time,
+        notes: newAppointment.reason,
+        status: 'pending'
+      });
+
       const { error } = await supabase
         .from('appointments')
         .insert({
@@ -135,7 +151,10 @@ const PatientDashboard = () => {
           status: 'pending'
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Appointment booking error:', error);
+        throw error;
+      }
 
       setNewAppointment({ doctorId: "", date: "", time: "", reason: "" });
       queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
@@ -333,6 +352,12 @@ const PatientDashboard = () => {
                         </option>
                       ))}
                     </select>
+                    {doctorsLoading && (
+                      <p className="text-sm text-healthcare-text-secondary mt-1">Loading doctors...</p>
+                    )}
+                    {!doctorsLoading && (!allDoctors || allDoctors.length === 0) && (
+                      <p className="text-sm text-red-500 mt-1">No verified doctors available at the moment</p>
+                    )}
                   </div>
                   
                   <div>
@@ -607,6 +632,7 @@ const PatientDashboard = () => {
                               Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
                             </h3>
                             <p className="text-sm text-healthcare-text-secondary">{doctor.specialty}</p>
+                            <p className="text-xs text-healthcare-text-secondary">License: {doctor.license_number}</p>
                             <Badge variant={doctor.verified ? "default" : "secondary"} className="mt-1">
                               {doctor.verified ? "Verified" : "Unverified"}
                             </Badge>
@@ -616,8 +642,11 @@ const PatientDashboard = () => {
                     </Card>
                   ))}
                 </div>
-                {!allDoctors?.length && (
-                  <p className="text-center text-healthcare-text-secondary py-8">No doctors available</p>
+                {!allDoctors?.length && !doctorsLoading && (
+                  <p className="text-center text-healthcare-text-secondary py-8">No verified doctors available</p>
+                )}
+                {doctorsLoading && (
+                  <p className="text-center text-healthcare-text-secondary py-8">Loading doctors...</p>
                 )}
               </CardContent>
             </Card>

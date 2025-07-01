@@ -57,11 +57,11 @@ const DoctorManagement = () => {
     }
 
     try {
-      // Create auth user with proper metadata
+      // Create auth user without email confirmation (admin override)
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: newDoctor.email,
         password: newDoctor.password,
-        email_confirm: true,
+        email_confirm: true, // This bypasses email confirmation
         user_metadata: {
           first_name: newDoctor.firstName,
           last_name: newDoctor.lastName,
@@ -100,7 +100,7 @@ const DoctorManagement = () => {
 
         toast({
           title: "Doctor Added",
-          description: `Dr. ${newDoctor.firstName} ${newDoctor.lastName} has been added successfully`,
+          description: `Dr. ${newDoctor.firstName} ${newDoctor.lastName} has been added successfully without email confirmation`,
         });
 
         setNewDoctor({
@@ -118,7 +118,7 @@ const DoctorManagement = () => {
       console.error('Error adding doctor:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to add doctor. You may need admin privileges to create users.",
+        description: error.message || "Failed to add doctor. Make sure you have admin privileges.",
         variant: "destructive",
       });
     }
@@ -135,15 +135,16 @@ const DoctorManagement = () => {
 
       toast({
         title: "Doctor Status Updated",
-        description: `Doctor verification status has been ${!currentStatus ? 'enabled' : 'disabled'}`,
+        description: `Doctor verification status has been ${!currentStatus ? 'verified' : 'unverified'}`,
       });
 
+      // Refresh the data immediately
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
     } catch (error: any) {
-      console.error('Error updating doctor:', error);
+      console.error('Error updating doctor verification:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update doctor status",
+        description: error.message || "Failed to update doctor verification status",
         variant: "destructive",
       });
     }
@@ -200,7 +201,7 @@ const DoctorManagement = () => {
               <DialogHeader>
                 <DialogTitle>Add New Doctor</DialogTitle>
                 <DialogDescription>
-                  Create a new doctor account in the system
+                  Create a new doctor account (no email confirmation required)
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
