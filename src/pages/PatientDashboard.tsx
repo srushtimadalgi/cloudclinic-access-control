@@ -52,7 +52,7 @@ const PatientDashboard = () => {
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
-      console.log('Fetching all verified doctors...');
+      console.log('PatientDashboard: Fetching all verified doctors...');
       const { data, error } = await supabase
         .from('doctors')
         .select(`
@@ -77,7 +77,8 @@ const PatientDashboard = () => {
         throw error;
       }
       
-      console.log('Fetched doctors:', data);
+      console.log('PatientDashboard: Fetched doctors count:', data?.length || 0);
+      console.log('PatientDashboard: Fetched doctors:', data);
       return data;
     },
     refetchInterval: false, // Remove automatic refetch to prevent redirect loops

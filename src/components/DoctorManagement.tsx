@@ -33,6 +33,8 @@ const DoctorManagement = () => {
 
   const toggleDoctorVerification = async (doctorId: string, currentStatus: boolean) => {
     try {
+      console.log('Toggling doctor verification:', { doctorId, currentStatus, newStatus: !currentStatus });
+      
       const { error } = await supabase
         .from('doctors')
         .update({ verified: !currentStatus })
@@ -45,8 +47,10 @@ const DoctorManagement = () => {
         description: `Doctor verification status has been ${!currentStatus ? 'verified' : 'unverified'}`,
       });
 
-      // Refresh the data immediately
+      // Refresh the data immediately - invalidate both admin and patient queries
+      console.log('Invalidating queries after verification toggle');
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      queryClient.invalidateQueries({ queryKey: ['all-doctors'] });
     } catch (error: any) {
       console.error('Error updating doctor verification:', error);
       toast({
@@ -74,6 +78,7 @@ const DoctorManagement = () => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      queryClient.invalidateQueries({ queryKey: ['all-doctors'] });
     } catch (error: any) {
       console.error('Error updating doctor status:', error);
       toast({
