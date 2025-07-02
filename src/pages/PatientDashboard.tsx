@@ -70,7 +70,7 @@ const PatientDashboard = () => {
         `)
         .eq('profiles.status', 'active')
         .eq('verified', true)
-        .order('profiles.first_name', { ascending: true });
+        .order('id', { ascending: true });
 
       if (error) {
         console.error('Error fetching doctors:', error);
@@ -80,8 +80,8 @@ const PatientDashboard = () => {
       console.log('Fetched doctors:', data);
       return data;
     },
-    refetchInterval: 5000, // Refetch every 5 seconds to get real-time updates
-    refetchIntervalInBackground: true
+    refetchInterval: false, // Remove automatic refetch to prevent redirect loops
+    refetchIntervalInBackground: false
   });
 
   // Fetch appointments for the current user
