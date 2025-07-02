@@ -1,14 +1,9 @@
 
-import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserPlus, Stethoscope } from "lucide-react";
+import { Stethoscope } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,15 +11,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 const DoctorManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [isAddingDoctor, setIsAddingDoctor] = useState(false);
-  const [newDoctor, setNewDoctor] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    password: "",
-    licenseNumber: "",
-    specialty: ""
-  });
 
   const { data: doctors, isLoading } = useQuery({
     queryKey: ['doctors'],
@@ -44,85 +30,6 @@ const DoctorManagement = () => {
       return data;
     }
   });
-
-  const addDoctor = async () => {
-    if (!newDoctor.firstName || !newDoctor.lastName || !newDoctor.email || 
-        !newDoctor.password || !newDoctor.licenseNumber || !newDoctor.specialty) {
-      toast({
-        title: "Error",
-        description: "Please fill in all fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Create auth user without email confirmation (admin override)
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: newDoctor.email,
-        password: newDoctor.password,
-        email_confirm: true, // This bypasses email confirmation
-        user_metadata: {
-          first_name: newDoctor.firstName,
-          last_name: newDoctor.lastName,
-          role: 'doctor'
-        }
-      });
-
-      if (authError) throw authError;
-
-      if (authData.user) {
-        // Create profile record
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            first_name: newDoctor.firstName,
-            last_name: newDoctor.lastName,
-            email: newDoctor.email,
-            role: 'doctor',
-            status: 'active'
-          });
-
-        if (profileError) throw profileError;
-
-        // Create doctor record
-        const { error: doctorError } = await supabase
-          .from('doctors')
-          .insert({
-            id: authData.user.id,
-            license_number: newDoctor.licenseNumber,
-            specialty: newDoctor.specialty,
-            verified: false
-          });
-
-        if (doctorError) throw doctorError;
-
-        toast({
-          title: "Doctor Added",
-          description: `Dr. ${newDoctor.firstName} ${newDoctor.lastName} has been added successfully without email confirmation`,
-        });
-
-        setNewDoctor({
-          firstName: "",
-          lastName: "",
-          email: "",
-          password: "",
-          licenseNumber: "",
-          specialty: ""
-        });
-        setIsAddingDoctor(false);
-        queryClient.invalidateQueries({ queryKey: ['doctors'] });
-      }
-    } catch (error: any) {
-      console.error('Error adding doctor:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to add doctor. Make sure you have admin privileges.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const toggleDoctorVerification = async (doctorId: string, currentStatus: boolean) => {
     try {
