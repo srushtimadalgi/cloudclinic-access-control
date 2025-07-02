@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,12 +9,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
+import moment from 'moment';
 import Navigation from "@/components/Navigation";
 import { 
   Calendar as CalendarIcon, 
   User, 
   FileText, 
-  Activity,
   Clock,
   CheckCircle,
   XCircle,
@@ -23,13 +26,23 @@ import {
   Download,
   Stethoscope,
   Heart,
-  Users
+  Users,
+  Edit,
+  Save,
+  Shield,
+  History
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+import { cn } from "@/lib/utils";
+
+// Import the calendar CSS
+import 'react-big-calendar/lib/css/react-big-calendar.css';
+
+const localizer = momentLocalizer(moment);
 
 // Type definitions
 type PrescriptionWithProfile = {
@@ -60,19 +73,41 @@ type ReportWithProfile = {
   };
 };
 
+type AppointmentWithProfile = {
+  id: string;
+  appointment_date: string;
+  appointment_time: string;
+  status: string;
+  notes: string;
+  patient_id: string;
+  profiles?: {
+    first_name: string;
+    last_name: string;
+  };
+};
+
 const DoctorDashboard = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
+  
+  // State for dialogs and forms
   const [isAddingAppointment, setIsAddingAppointment] = useState(false);
   const [isAddingPrescription, setIsAddingPrescription] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<string | null>(null);
+  const [appointmentDate, setAppointmentDate] = useState<Date>();
+  
+  // Form state
   const [newAppointment, setNewAppointment] = useState({
-    patientId: "",
+    patientName: "",
+    patientEmail: "",
     date: "",
     time: "",
     notes: ""
   });
+  
   const [newPrescription, setNewPrescription] = useState({
     patientId: "",
     medication: "",
@@ -81,8 +116,14 @@ const DoctorDashboard = () => {
     instructions: ""
   });
 
-  // Fetch doctor's appointments
-  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
+  const [profileForm, setProfileForm] = useState({
+    first_name: profile?.first_name || "",
+    last_name: profile?.last_name || "",
+    email: profile?.email || ""
+  });
+
+  // Fetch doctor's appointments (including patient requests)
+  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery<AppointmentWithProfile[]>({
     queryKey: ['doctor-appointments', user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -95,14 +136,28 @@ const DoctorDashboard = () => {
           appointment_time,
           status,
           notes,
-          patient_id,
-          profiles!inner(first_name, last_name)
+          patient_id
         `)
         .eq('doctor_id', user.id)
         .order('appointment_date', { ascending: false });
 
       if (error) throw error;
-      return data;
+
+      // Fetch patient profiles separately
+      if (data && data.length > 0) {
+        const patientIds = [...new Set(data.map(a => a.patient_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name')
+          .in('id', patientIds);
+
+        return data.map(appointment => ({
+          ...appointment,
+          profiles: profiles?.find(p => p.id === appointment.patient_id)
+        }));
+      }
+
+      return data as AppointmentWithProfile[];
     },
     enabled: !!user
   });
@@ -204,8 +259,26 @@ const DoctorDashboard = () => {
     enabled: !!user
   });
 
+  // Fetch doctor's verification status
+  const { data: doctorInfo } = useQuery({
+    queryKey: ['doctor-info', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('verified, specialty, license_number')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
+
   const createAppointment = async () => {
-    if (!newAppointment.patientId || !newAppointment.date || !newAppointment.time) {
+    if (!newAppointment.patientName || !newAppointment.date || !newAppointment.time) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -215,20 +288,43 @@ const DoctorDashboard = () => {
     }
 
     try {
+      // First check if patient exists by email, if not create a temporary ID
+      let patientId = null;
+      
+      if (newAppointment.patientEmail) {
+        const { data: existingPatient } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', newAppointment.patientEmail)
+          .eq('role', 'patient')
+          .single();
+        
+        if (existingPatient) {
+          patientId = existingPatient.id;
+        }
+      }
+
+      // If no patient found, create a placeholder entry
+      if (!patientId) {
+        // Generate a UUID for non-registered patients
+        const tempId = crypto.randomUUID();
+        patientId = tempId;
+      }
+
       const { error } = await supabase
         .from('appointments')
         .insert({
-          patient_id: newAppointment.patientId,
+          patient_id: patientId,
           doctor_id: user?.id,
           appointment_date: newAppointment.date,
           appointment_time: newAppointment.time,
-          notes: newAppointment.notes,
+          notes: `${newAppointment.notes} | Patient: ${newAppointment.patientName} | Email: ${newAppointment.patientEmail || 'N/A'}`,
           status: 'confirmed'
         });
 
       if (error) throw error;
 
-      setNewAppointment({ patientId: "", date: "", time: "", notes: "" });
+      setNewAppointment({ patientName: "", patientEmail: "", date: "", time: "", notes: "" });
       setIsAddingAppointment(false);
       queryClient.invalidateQueries({ queryKey: ['doctor-appointments'] });
 
@@ -241,6 +337,35 @@ const DoctorDashboard = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to create appointment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateAppointmentStatus = async (appointmentId: string, newStatus: string, newDate?: string, newTime?: string) => {
+    try {
+      const updateData: any = { status: newStatus };
+      if (newDate) updateData.appointment_date = newDate;
+      if (newTime) updateData.appointment_time = newTime;
+
+      const { error } = await supabase
+        .from('appointments')
+        .update(updateData)
+        .eq('id', appointmentId);
+
+      if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ['doctor-appointments'] });
+
+      toast({
+        title: "Appointment Updated",
+        description: `Appointment has been ${newStatus}`,
+      });
+    } catch (error: any) {
+      console.error('Error updating appointment:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update appointment",
         variant: "destructive",
       });
     }
@@ -289,6 +414,36 @@ const DoctorDashboard = () => {
     }
   };
 
+  const updateProfile = async () => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: profileForm.first_name,
+          last_name: profileForm.last_name,
+          email: profileForm.email
+        })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+
+      setIsEditingProfile(false);
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully",
+      });
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "confirmed": return "bg-green-500";
@@ -309,6 +464,15 @@ const DoctorDashboard = () => {
     }
   };
 
+  // Prepare calendar events
+  const calendarEvents = appointments.map(appointment => ({
+    id: appointment.id,
+    title: `${appointment.profiles?.first_name} ${appointment.profiles?.last_name} - ${appointment.status}`,
+    start: new Date(`${appointment.appointment_date}T${appointment.appointment_time}`),
+    end: new Date(`${appointment.appointment_date}T${appointment.appointment_time}`),
+    resource: appointment
+  }));
+
   if (appointmentsLoading || prescriptionsLoading || patientsLoading) {
     return (
       <div className="min-h-screen bg-healthcare-gray flex items-center justify-center">
@@ -327,12 +491,32 @@ const DoctorDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-healthcare-text-primary">
-            Doctor Dashboard
-          </h1>
-          <p className="text-healthcare-text-secondary mt-1">
-            Welcome back, Dr. {profile?.first_name} {profile?.last_name}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-healthcare-text-primary">
+                Doctor Dashboard
+              </h1>
+              <p className="text-healthcare-text-secondary mt-1">
+                Welcome back, Dr. {profile?.first_name} {profile?.last_name}
+              </p>
+              {doctorInfo && (
+                <div className="flex items-center space-x-2 mt-2">
+                  <Badge variant={doctorInfo.verified ? "default" : "destructive"}>
+                    {doctorInfo.verified ? "Verified" : "Unverified"}
+                  </Badge>
+                  <span className="text-sm text-healthcare-text-secondary">
+                    {doctorInfo.specialty}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="flex items-center space-x-2">
+                <Shield className="h-5 w-5 text-healthcare-blue" />
+                <span className="text-sm font-medium">Doctor Access</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -365,10 +549,12 @@ const DoctorDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-healthcare-text-secondary">Total Patients</p>
-                  <p className="text-2xl font-bold text-healthcare-text-primary">{patients.length}</p>
+                  <p className="text-sm text-healthcare-text-secondary">Pending Appointments</p>
+                  <p className="text-2xl font-bold text-healthcare-text-primary">
+                    {appointments.filter(a => a.status === "pending").length}
+                  </p>
                 </div>
-                <Users className="h-8 w-8 text-healthcare-blue" />
+                <Clock className="h-8 w-8 text-yellow-500" />
               </div>
             </CardContent>
           </Card>
@@ -387,12 +573,14 @@ const DoctorDashboard = () => {
 
         {/* Main Content */}
         <Tabs defaultValue="appointments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="appointments">Appointments</TabsTrigger>
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
             <TabsTrigger value="patients">Patients</TabsTrigger>
             <TabsTrigger value="reports">Medical Reports</TabsTrigger>
+            <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="history">Patient History</TabsTrigger>
           </TabsList>
 
           {/* Appointments Tab */}
@@ -401,47 +589,71 @@ const DoctorDashboard = () => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Appointments</CardTitle>
-                    <CardDescription>Manage your appointments</CardDescription>
+                    <CardTitle>Appointments Management</CardTitle>
+                    <CardDescription>Manage your appointments and patient requests</CardDescription>
                   </div>
                   <Dialog open={isAddingAppointment} onOpenChange={setIsAddingAppointment}>
                     <DialogTrigger asChild>
                       <Button>
                         <Plus className="h-4 w-4 mr-2" />
-                        Schedule Appointment
+                        Create Appointment
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-[425px]">
                       <DialogHeader>
-                        <DialogTitle>Schedule New Appointment</DialogTitle>
+                        <DialogTitle>Create New Appointment</DialogTitle>
                         <DialogDescription>
-                          Create a new appointment with a patient
+                          Create appointment with any patient (registered or not)
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
                         <div>
-                          <Label htmlFor="patient">Patient *</Label>
-                          <Select value={newAppointment.patientId} onValueChange={(value) => setNewAppointment({...newAppointment, patientId: value})}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a patient" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {patients.map(patient => (
-                                <SelectItem key={patient.id} value={patient.id}>
-                                  {patient.first_name} {patient.last_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Label htmlFor="patientName">Patient Name *</Label>
+                          <Input
+                            id="patientName"
+                            value={newAppointment.patientName}
+                            onChange={(e) => setNewAppointment({...newAppointment, patientName: e.target.value})}
+                            placeholder="Enter patient's full name"
+                          />
                         </div>
                         <div>
-                          <Label htmlFor="date">Date *</Label>
+                          <Label htmlFor="patientEmail">Patient Email (Optional)</Label>
                           <Input
-                            id="date"
-                            type="date"
-                            value={newAppointment.date}
-                            onChange={(e) => setNewAppointment({...newAppointment, date: e.target.value})}
+                            id="patientEmail"
+                            type="email"
+                            value={newAppointment.patientEmail}
+                            onChange={(e) => setNewAppointment({...newAppointment, patientEmail: e.target.value})}
+                            placeholder="patient@email.com"
                           />
+                        </div>
+                        <div>
+                          <Label>Date *</Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-full justify-start text-left font-normal",
+                                  !appointmentDate && "text-muted-foreground"
+                                )}
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {appointmentDate ? format(appointmentDate, "PPP") : <span>Pick a date</span>}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={appointmentDate}
+                                onSelect={(date) => {
+                                  setAppointmentDate(date);
+                                  setNewAppointment({...newAppointment, date: date ? format(date, "yyyy-MM-dd") : ""});
+                                }}
+                                initialFocus
+                                className="pointer-events-auto"
+                              />
+                            </PopoverContent>
+                          </Popover>
                         </div>
                         <div>
                           <Label htmlFor="time">Time *</Label>
@@ -465,7 +677,7 @@ const DoctorDashboard = () => {
                             id="notes"
                             value={newAppointment.notes}
                             onChange={(e) => setNewAppointment({...newAppointment, notes: e.target.value})}
-                            placeholder="Any additional notes..."
+                            placeholder="Additional notes..."
                           />
                         </div>
                       </div>
@@ -474,7 +686,7 @@ const DoctorDashboard = () => {
                           Cancel
                         </Button>
                         <Button onClick={createAppointment}>
-                          Schedule Appointment
+                          Create Appointment
                         </Button>
                       </div>
                     </DialogContent>
@@ -490,13 +702,14 @@ const DoctorDashboard = () => {
                       <TableHead>Time</TableHead>
                       <TableHead>Notes</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {appointments.map((appointment) => (
                       <TableRow key={appointment.id}>
                         <TableCell className="font-medium">
-                          {appointment.profiles.first_name} {appointment.profiles.last_name}
+                          {appointment.profiles?.first_name} {appointment.profiles?.last_name}
                         </TableCell>
                         <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
                         <TableCell>{appointment.appointment_time}</TableCell>
@@ -509,17 +722,71 @@ const DoctorDashboard = () => {
                             </Badge>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-1">
+                            {appointment.status === 'pending' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                                >
+                                  Accept
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                                >
+                                  Decline
+                                </Button>
+                              </>
+                            )}
+                            {appointment.status === 'confirmed' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                              >
+                                Complete
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                     {appointments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-healthcare-text-secondary">
+                        <TableCell colSpan={6} className="text-center py-8 text-healthcare-text-secondary">
                           No appointments found
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Calendar Tab */}
+          <TabsContent value="calendar">
+            <Card>
+              <CardHeader>
+                <CardTitle>Calendar View</CardTitle>
+                <CardDescription>View your appointments in calendar format</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div style={{ height: '500px' }}>
+                  <BigCalendar
+                    localizer={localizer}
+                    events={calendarEvents}
+                    startAccessor="start"
+                    endAccessor="end"
+                    style={{ height: '100%' }}
+                    views={['month', 'week', 'day']}
+                    defaultView="month"
+                  />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -734,8 +1001,16 @@ const DoctorDashboard = () => {
           <TabsContent value="profile">
             <Card>
               <CardHeader>
-                <CardTitle>Doctor Profile</CardTitle>
-                <CardDescription>Your profile information</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Doctor Profile</CardTitle>
+                    <CardDescription>Your profile information and verification status</CardDescription>
+                  </div>
+                  <Button onClick={() => setIsEditingProfile(!isEditingProfile)}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    {isEditingProfile ? 'Cancel' : 'Edit Profile'}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -743,16 +1018,18 @@ const DoctorDashboard = () => {
                     <Label htmlFor="firstName">First Name</Label>
                     <Input
                       id="firstName"
-                      value={profile?.first_name || ''}
-                      readOnly
+                      value={isEditingProfile ? profileForm.first_name : profile?.first_name || ''}
+                      onChange={(e) => setProfileForm({...profileForm, first_name: e.target.value})}
+                      readOnly={!isEditingProfile}
                     />
                   </div>
                   <div>
                     <Label htmlFor="lastName">Last Name</Label>
                     <Input
                       id="lastName"
-                      value={profile?.last_name || ''}
-                      readOnly
+                      value={isEditingProfile ? profileForm.last_name : profile?.last_name || ''}
+                      onChange={(e) => setProfileForm({...profileForm, last_name: e.target.value})}
+                      readOnly={!isEditingProfile}
                     />
                   </div>
                 </div>
@@ -760,25 +1037,115 @@ const DoctorDashboard = () => {
                   <Label htmlFor="email">Email</Label>
                   <Input
                     id="email"
-                    value={profile?.email || ''}
-                    readOnly
+                    value={isEditingProfile ? profileForm.email : profile?.email || ''}
+                    onChange={(e) => setProfileForm({...profileForm, email: e.target.value})}
+                    readOnly={!isEditingProfile}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="role">Role</Label>
-                  <Input
-                    id="role"
-                    value={profile?.role || ''}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="status">Status</Label>
-                  <Input
-                    id="status"
-                    value={profile?.status || ''}
-                    readOnly
-                  />
+                {doctorInfo && (
+                  <>
+                    <div>
+                      <Label htmlFor="specialty">Specialty</Label>
+                      <Input
+                        id="specialty"
+                        value={doctorInfo.specialty || ''}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="license">License Number</Label>
+                      <Input
+                        id="license"
+                        value={doctorInfo.license_number || ''}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="verified">Verification Status</Label>
+                      <div className="mt-1">
+                        <Badge variant={doctorInfo.verified ? "default" : "destructive"}>
+                          {doctorInfo.verified ? "Verified by Admin" : "Pending Verification"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </>
+                )}
+                {isEditingProfile && (
+                  <Button onClick={updateProfile}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Patient History Tab */}
+          <TabsContent value="history">
+            <Card>
+              <CardHeader>
+                <CardTitle>Patient Prescription History</CardTitle>
+                <CardDescription>View prescription history for each patient</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Patient List */}
+                  <div>
+                    <h3 className="font-semibold mb-4">Select Patient</h3>
+                    <div className="space-y-2">
+                      {[...new Set(prescriptions.map(p => p.patient_id))].map(patientId => {
+                        const patient = prescriptions.find(p => p.patient_id === patientId);
+                        return (
+                          <Button
+                            key={patientId}
+                            variant={selectedPatientForHistory === patientId ? "default" : "outline"}
+                            className="w-full justify-start"
+                            onClick={() => setSelectedPatientForHistory(patientId)}
+                          >
+                            <User className="h-4 w-4 mr-2" />
+                            {patient?.profiles?.first_name} {patient?.profiles?.last_name}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Prescription History */}
+                  <div>
+                    <h3 className="font-semibold mb-4">Prescription History</h3>
+                    {selectedPatientForHistory ? (
+                      <div className="space-y-3">
+                        {prescriptions
+                          .filter(p => p.patient_id === selectedPatientForHistory)
+                          .map(prescription => (
+                            <div key={prescription.id} className="p-3 border rounded-lg">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="font-medium">{prescription.medication}</h4>
+                                <Badge className={prescription.status === "active" ? "bg-green-500" : "bg-gray-500"}>
+                                  {prescription.status}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-gray-600">
+                                <strong>Dosage:</strong> {prescription.dosage}
+                              </p>
+                              <p className="text-sm text-gray-600">
+                                <strong>Duration:</strong> {prescription.duration}
+                              </p>
+                              {prescription.instructions && (
+                                <p className="text-sm text-gray-600">
+                                  <strong>Instructions:</strong> {prescription.instructions}
+                                </p>
+                              )}
+                              <p className="text-sm text-gray-500 mt-2">
+                                Prescribed on {new Date(prescription.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">Select a patient to view prescription history</p>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
