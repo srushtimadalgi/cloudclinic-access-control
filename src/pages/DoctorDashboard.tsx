@@ -31,6 +31,35 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 
+// Type definitions
+type PrescriptionWithProfile = {
+  id: string;
+  medication: string;
+  dosage: string;
+  duration: string;
+  instructions: string;
+  status: string;
+  created_at: string;
+  patient_id: string;
+  profiles?: {
+    first_name: string;
+    last_name: string;
+  };
+};
+
+type ReportWithProfile = {
+  id: string;
+  title: string;
+  file_url: string;
+  file_type: string;
+  uploaded_at: string;
+  patient_id: string;
+  profiles?: {
+    first_name: string;
+    last_name: string;
+  };
+};
+
 const DoctorDashboard = () => {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -79,7 +108,7 @@ const DoctorDashboard = () => {
   });
 
   // Fetch doctor's prescriptions
-  const { data: prescriptions = [], isLoading: prescriptionsLoading } = useQuery({
+  const { data: prescriptions = [], isLoading: prescriptionsLoading } = useQuery<PrescriptionWithProfile[]>({
     queryKey: ['doctor-prescriptions', user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -94,13 +123,27 @@ const DoctorDashboard = () => {
           instructions,
           status,
           created_at,
-          patient_id,
-          profiles!inner(first_name, last_name)
+          patient_id
         `)
         .eq('doctor_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
+      // Fetch patient profiles separately
+      if (data && data.length > 0) {
+        const patientIds = [...new Set(data.map(p => p.patient_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name')
+          .in('id', patientIds);
+
+        return data.map(prescription => ({
+          ...prescription,
+          profiles: profiles?.find(p => p.id === prescription.patient_id)
+        })) as PrescriptionWithProfile[];
+      }
+
       return data;
     },
     enabled: !!user
@@ -123,7 +166,7 @@ const DoctorDashboard = () => {
   });
 
   // Fetch medical reports that doctor has access to
-  const { data: accessibleReports = [], isLoading: reportsLoading } = useQuery({
+  const { data: accessibleReports = [], isLoading: reportsLoading } = useQuery<ReportWithProfile[]>({
     queryKey: ['accessible-reports', user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -136,12 +179,26 @@ const DoctorDashboard = () => {
           file_url,
           file_type,
           uploaded_at,
-          patient_id,
-          profiles!inner(first_name, last_name)
+          patient_id
         `)
         .order('uploaded_at', { ascending: false });
 
       if (error) throw error;
+
+      // Fetch patient profiles separately
+      if (data && data.length > 0) {
+        const patientIds = [...new Set(data.map(r => r.patient_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name')
+          .in('id', patientIds);
+
+        return data.map(report => ({
+          ...report,
+          profiles: profiles?.find(p => p.id === report.patient_id)
+        })) as ReportWithProfile[];
+      }
+
       return data;
     },
     enabled: !!user
@@ -568,7 +625,7 @@ const DoctorDashboard = () => {
                         </Badge>
                       </div>
                       <p className="text-sm text-healthcare-text-secondary">
-                        <strong>Patient:</strong> {prescription.profiles.first_name} {prescription.profiles.last_name}
+                        <strong>Patient:</strong> {prescription.profiles?.first_name} {prescription.profiles?.last_name}
                       </p>
                       <p className="text-sm text-healthcare-text-secondary">
                         <strong>Dosage:</strong> {prescription.dosage} • <strong>Duration:</strong> {prescription.duration}
@@ -644,7 +701,7 @@ const DoctorDashboard = () => {
                         <div>
                           <h4 className="font-medium text-healthcare-text-primary">{report.title}</h4>
                           <p className="text-sm text-healthcare-text-secondary">
-                            Patient: {report.profiles.first_name} {report.profiles.last_name}
+                            Patient: {report.profiles?.first_name} {report.profiles?.last_name}
                           </p>
                           <p className="text-sm text-healthcare-text-secondary">
                             {report.file_type} • {new Date(report.uploaded_at).toLocaleDateString()}
