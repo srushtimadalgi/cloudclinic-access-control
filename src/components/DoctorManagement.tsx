@@ -51,10 +51,13 @@ const DoctorManagement = () => {
         description: `Doctor verification status has been ${!currentStatus ? 'verified' : 'unverified'}`,
       });
 
-      // Refresh the data immediately - invalidate both admin and patient queries
+      // Refresh the data immediately - invalidate all relevant queries
       console.log('Invalidating queries after verification toggle');
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
       queryClient.invalidateQueries({ queryKey: ['all-doctors'] });
+      // Invalidate doctor-specific queries for real-time updates
+      queryClient.invalidateQueries({ queryKey: ['doctor-info'] });
+      queryClient.invalidateQueries({ queryKey: ['doctorProfile'] });
     } catch (error: any) {
       console.error('Error updating doctor verification:', error);
       toast({
