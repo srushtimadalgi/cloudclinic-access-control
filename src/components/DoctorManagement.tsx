@@ -15,6 +15,7 @@ const DoctorManagement = () => {
   const { data: doctors, isLoading } = useQuery({
     queryKey: ['doctors'],
     queryFn: async () => {
+      console.log('DoctorManagement: Fetching doctors for admin...');
       const { data, error } = await supabase
         .from('doctors')
         .select(`
@@ -27,8 +28,11 @@ const DoctorManagement = () => {
         `);
 
       if (error) throw error;
+      console.log('DoctorManagement: Fetched doctors:', data?.map(d => ({ id: d.id, verified: d.verified })));
       return data;
-    }
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
   const toggleDoctorVerification = async (doctorId: string, currentStatus: boolean) => {
