@@ -139,19 +139,25 @@ const DoctorManagement = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={doctor.verified ? 'default' : 'destructive'}>
+                    <Badge variant={doctor.verified ? 'success' : 'destructive'}>
                       {doctor.verified ? 'Verified' : 'Unverified'}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleDoctorVerification(doctor.id, doctor.verified)}
-                      >
-                        {doctor.verified ? 'Unverify' : 'Verify'}
-                      </Button>
+                      {!doctor.verified ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleDoctorVerification(doctor.id, doctor.verified)}
+                        >
+                          Verify
+                        </Button>
+                      ) : (
+                        <Badge variant="success" className="px-3 py-1">
+                          ✓ Verified
+                        </Badge>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
