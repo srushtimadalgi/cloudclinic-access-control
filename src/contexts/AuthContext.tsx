@@ -83,22 +83,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error };
       }
 
-      // If user is a doctor, create doctor record after profile is created
-      if (userData.role === 'doctor' && data.user && userData.licenseNumber && userData.specialty) {
-        setTimeout(async () => {
-          const { error: doctorError } = await supabase
-            .from('doctors')
-            .insert({
-              id: data.user!.id,
-              license_number: userData.licenseNumber!,
-              specialty: userData.specialty!,
-            });
-          
-          if (doctorError) {
-            console.error('Doctor record creation error:', doctorError);
-          }
-        }, 2000);
-      }
+      // Doctor record is now automatically created by database trigger
 
       return { error: null };
     } catch (error) {
