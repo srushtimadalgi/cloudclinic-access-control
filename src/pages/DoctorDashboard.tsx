@@ -501,8 +501,8 @@ const DoctorDashboard = () => {
               </p>
               {doctorInfo && (
                 <div className="flex items-center space-x-2 mt-2">
-                  <Badge variant={doctorInfo.verified ? "success" : "destructive"}>
-                    {doctorInfo.verified ? "Verified" : "Unverified"}
+                  <Badge variant="success">
+                    Active Doctor
                   </Badge>
                   <span className="text-sm text-healthcare-text-secondary">
                     {doctorInfo.specialty}
@@ -1061,10 +1061,10 @@ const DoctorDashboard = () => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="verified">Verification Status</Label>
+                      <Label htmlFor="status">Account Status</Label>
                       <div className="mt-1">
-                        <Badge variant={doctorInfo.verified ? "success" : "destructive"}>
-                          {doctorInfo.verified ? "Verified by Admin" : "Pending Verification"}
+                        <Badge variant="success">
+                          Active Doctor
                         </Badge>
                       </div>
                     </div>

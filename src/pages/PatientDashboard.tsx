@@ -48,17 +48,16 @@ const PatientDashboard = () => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
 
-  // Fetch all verified doctors with real-time updates
+  // Fetch all doctors with real-time updates (no verification required)
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
-      console.log('PatientDashboard: Fetching all verified doctors...');
+      console.log('PatientDashboard: Fetching all doctors...');
       const { data, error } = await supabase
         .from('doctors')
         .select(`
           id,
           specialty,
-          verified,
           license_number,
           profiles!inner(
             id,
@@ -69,7 +68,6 @@ const PatientDashboard = () => {
           )
         `)
         .eq('profiles.status', 'active')
-        .eq('verified', true)
         .order('id', { ascending: true });
 
       if (error) {
@@ -403,13 +401,13 @@ const PatientDashboard = () => {
                     {!doctorsLoading && (!allDoctors || allDoctors.length === 0) && (
                       <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                         <p className="text-sm text-yellow-800">
-                          <strong>No verified doctors available.</strong> Please contact the admin to verify doctor accounts.
+                          <strong>No doctors available.</strong> Please wait for doctors to sign up.
                         </p>
                       </div>
                     )}
                     {allDoctors && allDoctors.length > 0 && (
                       <p className="text-sm text-green-600 mt-1">
-                        {allDoctors.length} verified doctor{allDoctors.length !== 1 ? 's' : ''} available
+                        {allDoctors.length} doctor{allDoctors.length !== 1 ? 's' : ''} available
                       </p>
                     )}
                   </div>
@@ -682,7 +680,7 @@ const PatientDashboard = () => {
               <CardHeader>
                 <CardTitle>Available Doctors</CardTitle>
                 <CardDescription>
-                  Browse all verified doctors in the system
+                  Browse all doctors in the system
                   {allDoctors && allDoctors.length > 0 && (
                     <span className="text-green-600 font-medium ml-2">
                       ({allDoctors.length} doctor{allDoctors.length !== 1 ? 's' : ''} available)
@@ -699,14 +697,13 @@ const PatientDashboard = () => {
                 ) : !allDoctors || allDoctors.length === 0 ? (
                   <div className="text-center py-12">
                     <Stethoscope className="h-16 w-16 text-healthcare-text-secondary mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-healthcare-text-primary mb-2">No Verified Doctors Available</h3>
+                    <h3 className="text-lg font-medium text-healthcare-text-primary mb-2">No Doctors Available</h3>
                     <p className="text-healthcare-text-secondary mb-4">
-                      There are currently no verified doctors in the system.
+                      There are currently no doctors in the system.
                     </p>
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-w-md mx-auto">
                       <p className="text-sm text-yellow-800">
-                        <strong>Note:</strong> Doctors need to be verified by an administrator before they appear here.
-                        Please contact your administrator if you're expecting to see doctors listed.
+                        <strong>Note:</strong> Please wait for doctors to sign up to the system.
                       </p>
                     </div>
                   </div>
@@ -731,10 +728,7 @@ const PatientDashboard = () => {
                                 {doctor.profiles.email}
                               </p>
                               <div className="flex items-center space-x-2 mt-2">
-                                <Badge variant={doctor.verified ? "default" : "secondary"}>
-                                  {doctor.verified ? "✓ Verified" : "Unverified"}
-                                </Badge>
-                                <Badge variant={doctor.profiles.status === "active" ? "default" : "secondary"}>
+                                <Badge variant={doctor.profiles.status === "active" ? "success" : "secondary"}>
                                   {doctor.profiles.status}
                                 </Badge>
                               </div>

@@ -8,7 +8,6 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Navigation from "@/components/Navigation";
-import DoctorManagement from "@/components/DoctorManagement";
 import { Users, Calendar, Search, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -156,9 +155,8 @@ const AdminDashboard = () => {
 
         {/* Main Content with Tabs */}
         <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-1">
             <TabsTrigger value="users">User Management</TabsTrigger>
-            <TabsTrigger value="doctors">Doctor Management</TabsTrigger>
           </TabsList>
 
           {/* User Management Tab */}
@@ -257,11 +255,6 @@ const AdminDashboard = () => {
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Doctor Management Tab */}
-          <TabsContent value="doctors">
-            <DoctorManagement />
           </TabsContent>
         </Tabs>
       </div>
