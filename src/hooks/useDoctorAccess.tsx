@@ -25,18 +25,16 @@ export const useDoctorAccess = () => {
 
   const loadDoctorAccess = async () => {
     try {
-      // Get all verified doctors from the database
+      // Get all active doctors from the database
       const { data: doctors, error: doctorsError } = await supabase
         .from('doctors')
         .select(`
           id,
           specialty,
-          verified,
           profiles!inner(first_name, last_name, role, status)
         `)
         .eq('profiles.role', 'doctor')
-        .eq('profiles.status', 'active')
-        .eq('verified', true);
+        .eq('profiles.status', 'active');
 
       if (doctorsError) {
         console.error('Error fetching doctors:', doctorsError);
