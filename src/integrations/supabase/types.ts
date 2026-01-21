@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           appointment_date: string
           appointment_time: string
+          consultation_type: string
           created_at: string | null
           doctor_id: string
           id: string
@@ -25,10 +26,12 @@ export type Database = {
           patient_id: string
           status: string
           updated_at: string | null
+          video_room_id: string | null
         }
         Insert: {
           appointment_date: string
           appointment_time: string
+          consultation_type?: string
           created_at?: string | null
           doctor_id: string
           id?: string
@@ -36,10 +39,12 @@ export type Database = {
           patient_id: string
           status?: string
           updated_at?: string | null
+          video_room_id?: string | null
         }
         Update: {
           appointment_date?: string
           appointment_time?: string
+          consultation_type?: string
           created_at?: string | null
           doctor_id?: string
           id?: string
@@ -47,6 +52,7 @@ export type Database = {
           patient_id?: string
           status?: string
           updated_at?: string | null
+          video_room_id?: string | null
         }
         Relationships: [
           {
