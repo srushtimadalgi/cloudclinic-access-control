@@ -30,8 +30,10 @@ import {
   Edit,
   Save,
   Shield,
-  History
+  History,
+  Video
 } from "lucide-react";
+import { JoinVideoCallButton } from "@/components/VideoConsultation";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -80,6 +82,7 @@ type AppointmentWithProfile = {
   status: string;
   notes: string;
   patient_id: string;
+  consultation_type?: string;
   profiles?: {
     first_name: string;
     last_name: string;
@@ -136,7 +139,8 @@ const DoctorDashboard = () => {
           appointment_time,
           status,
           notes,
-          patient_id
+          patient_id,
+          consultation_type
         `)
         .eq('doctor_id', user.id)
         .order('appointment_date', { ascending: false });
@@ -700,6 +704,7 @@ const DoctorDashboard = () => {
                       <TableHead>Patient</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Notes</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
@@ -713,6 +718,18 @@ const DoctorDashboard = () => {
                         </TableCell>
                         <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
                         <TableCell>{appointment.appointment_time}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {appointment.consultation_type === 'video' ? (
+                              <Badge variant="outline" className="gap-1 border-healthcare-blue text-healthcare-blue">
+                                <Video className="h-3 w-3" />
+                                Video
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">In-Person</Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{appointment.notes}</TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
@@ -743,13 +760,21 @@ const DoctorDashboard = () => {
                               </>
                             )}
                             {appointment.status === 'confirmed' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
-                              >
-                                Complete
-                              </Button>
+                              <>
+                                <JoinVideoCallButton
+                                  appointmentId={appointment.id}
+                                  consultationType={appointment.consultation_type || 'in-person'}
+                                  status={appointment.status}
+                                  participantName={`Dr. ${profile?.first_name} ${profile?.last_name}`}
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                                >
+                                  Complete
+                                </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -757,7 +782,7 @@ const DoctorDashboard = () => {
                     ))}
                     {appointments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-healthcare-text-secondary">
+                        <TableCell colSpan={7} className="text-center py-8 text-healthcare-text-secondary">
                           No appointments found
                         </TableCell>
                       </TableRow>

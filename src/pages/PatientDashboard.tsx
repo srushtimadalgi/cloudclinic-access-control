@@ -22,8 +22,10 @@ import {
   XCircle,
   Upload,
   Bell,
-  Stethoscope
+  Stethoscope,
+  Video
 } from "lucide-react";
+import { JoinVideoCallButton } from "@/components/VideoConsultation";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -98,6 +100,7 @@ const PatientDashboard = () => {
           status,
           notes,
           doctor_id,
+          consultation_type,
           doctors!inner(
             specialty,
             profiles!inner(first_name, last_name)
@@ -116,7 +119,8 @@ const PatientDashboard = () => {
     doctorId: "",
     date: "",
     time: "",
-    reason: ""
+    reason: "",
+    consultationType: "in-person" as "in-person" | "video"
   });
 
   const bookAppointment = async () => {
@@ -156,7 +160,8 @@ const PatientDashboard = () => {
           appointment_date: newAppointment.date,
           appointment_time: newAppointment.time,
           notes: newAppointment.reason,
-          status: 'pending'
+          status: 'pending',
+          consultation_type: newAppointment.consultationType
         });
 
       if (error) {
@@ -164,7 +169,7 @@ const PatientDashboard = () => {
         throw error;
       }
 
-      setNewAppointment({ doctorId: "", date: "", time: "", reason: "" });
+      setNewAppointment({ doctorId: "", date: "", time: "", reason: "", consultationType: "in-person" });
       queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
 
       toast({
@@ -437,6 +442,34 @@ const PatientDashboard = () => {
                     </select>
                   </div>
                   <div>
+                    <label className="text-sm font-medium">Consultation Type</label>
+                    <div className="flex gap-4 mt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="consultationType"
+                          value="in-person"
+                          checked={newAppointment.consultationType === "in-person"}
+                          onChange={(e) => setNewAppointment({...newAppointment, consultationType: e.target.value as "in-person" | "video"})}
+                          className="w-4 h-4 text-healthcare-blue"
+                        />
+                        <span className="text-sm">In-Person</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="consultationType"
+                          value="video"
+                          checked={newAppointment.consultationType === "video"}
+                          onChange={(e) => setNewAppointment({...newAppointment, consultationType: e.target.value as "in-person" | "video"})}
+                          className="w-4 h-4 text-healthcare-blue"
+                        />
+                        <Video className="h-4 w-4" />
+                        <span className="text-sm">Video Call</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div>
                     <label className="text-sm font-medium">Reason for Visit</label>
                     <Input
                       value={newAppointment.reason}
@@ -509,12 +542,14 @@ const PatientDashboard = () => {
                       <TableHead>Doctor</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Time</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {appointments.map((appointment) => (
+                    {appointments.map((appointment: any) => (
                       <TableRow key={appointment.id}>
                         <TableCell>
                           <div>
@@ -526,6 +561,18 @@ const PatientDashboard = () => {
                         </TableCell>
                         <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
                         <TableCell>{appointment.appointment_time}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {appointment.consultation_type === 'video' ? (
+                              <Badge variant="outline" className="gap-1 border-healthcare-blue text-healthcare-blue">
+                                <Video className="h-3 w-3" />
+                                Video
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">In-Person</Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{appointment.notes}</TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
@@ -535,11 +582,19 @@ const PatientDashboard = () => {
                             </Badge>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <JoinVideoCallButton
+                            appointmentId={appointment.id}
+                            consultationType={appointment.consultation_type || 'in-person'}
+                            status={appointment.status}
+                            participantName={`${profile?.first_name} ${profile?.last_name}`}
+                          />
+                        </TableCell>
                       </TableRow>
                     ))}
                     {appointments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-healthcare-text-secondary">
+                        <TableCell colSpan={7} className="text-center py-8 text-healthcare-text-secondary">
                           No appointments found
                         </TableCell>
                       </TableRow>
