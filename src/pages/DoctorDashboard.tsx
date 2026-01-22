@@ -281,25 +281,72 @@ const DoctorDashboard = () => {
     enabled: !!user
   });
 
+  // Input validation helper
+  const validateAppointmentInput = () => {
+    const errors: string[] = [];
+    
+    // Validate patient name (required)
+    if (!newAppointment.patientName || newAppointment.patientName.trim().length === 0) {
+      errors.push('Patient name is required');
+    } else if (newAppointment.patientName.length > 100) {
+      errors.push('Patient name too long (max 100 characters)');
+    } else if (!/^[a-zA-Z\s'-]+$/.test(newAppointment.patientName)) {
+      errors.push('Patient name contains invalid characters');
+    }
+    
+    // Validate email if provided
+    if (newAppointment.patientEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newAppointment.patientEmail)) {
+        errors.push('Invalid email format');
+      }
+      if (newAppointment.patientEmail.length > 255) {
+        errors.push('Email too long');
+      }
+    }
+    
+    // Validate notes length
+    if (newAppointment.notes && newAppointment.notes.length > 1500) {
+      errors.push('Notes too long (max 1500 characters)');
+    }
+    
+    // Validate date and time
+    if (!newAppointment.date) {
+      errors.push('Date is required');
+    }
+    if (!newAppointment.time) {
+      errors.push('Time is required');
+    }
+    
+    return errors;
+  };
+
   const createAppointment = async () => {
-    if (!newAppointment.patientName || !newAppointment.date || !newAppointment.time) {
+    // Validate all inputs
+    const validationErrors = validateAppointmentInput();
+    if (validationErrors.length > 0) {
       toast({
-        title: "Error",
-        description: "Please fill in all required fields",
+        title: "Validation Error",
+        description: validationErrors.join('; '),
         variant: "destructive",
       });
       return;
     }
 
     try {
+      // Sanitize inputs before storing
+      const sanitizedPatientName = newAppointment.patientName.trim();
+      const sanitizedEmail = newAppointment.patientEmail?.trim().toLowerCase() || '';
+      const sanitizedNotes = newAppointment.notes.trim();
+
       // First check if patient exists by email, if not create a temporary ID
       let patientId = null;
       
-      if (newAppointment.patientEmail) {
+      if (sanitizedEmail) {
         const { data: existingPatient } = await supabase
           .from('profiles')
           .select('id')
-          .eq('email', newAppointment.patientEmail)
+          .eq('email', sanitizedEmail)
           .eq('role', 'patient')
           .single();
         
@@ -315,6 +362,11 @@ const DoctorDashboard = () => {
         patientId = tempId;
       }
 
+      // Build notes with sanitized data - use structured format
+      const notesContent = sanitizedNotes 
+        ? `${sanitizedNotes} | Patient: ${sanitizedPatientName} | Email: ${sanitizedEmail || 'N/A'}`
+        : `Patient: ${sanitizedPatientName} | Email: ${sanitizedEmail || 'N/A'}`;
+
       const { error } = await supabase
         .from('appointments')
         .insert({
@@ -322,7 +374,7 @@ const DoctorDashboard = () => {
           doctor_id: user?.id,
           appointment_date: newAppointment.date,
           appointment_time: newAppointment.time,
-          notes: `${newAppointment.notes} | Patient: ${newAppointment.patientName} | Email: ${newAppointment.patientEmail || 'N/A'}`,
+          notes: notesContent,
           status: 'confirmed'
         });
 

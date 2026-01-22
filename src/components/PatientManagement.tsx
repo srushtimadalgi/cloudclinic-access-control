@@ -40,6 +40,7 @@ const PatientManagement = () => {
   });
 
   const addPatient = async () => {
+    // Validate required fields
     if (!newPatient.firstName || !newPatient.lastName || !newPatient.email) {
       toast({
         title: "Error",
@@ -49,50 +50,53 @@ const PatientManagement = () => {
       return;
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newPatient.email)) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate name lengths
+    if (newPatient.firstName.length > 100 || newPatient.lastName.length > 100) {
+      toast({
+        title: "Error",
+        description: "Name is too long (max 100 characters)",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      // Create auth user without password - they'll need to reset password to access
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: newPatient.email,
-        email_confirm: true,
-        user_metadata: {
-          first_name: newPatient.firstName,
-          last_name: newPatient.lastName,
-          role: 'patient'
+      // Use edge function to create patient (admin API must be called server-side)
+      const { data, error } = await supabase.functions.invoke('create-patient', {
+        body: {
+          email: newPatient.email.trim().toLowerCase(),
+          first_name: newPatient.firstName.trim(),
+          last_name: newPatient.lastName.trim(),
         }
       });
 
-      if (authError) throw authError;
+      if (error) throw error;
 
-      if (authData.user) {
-        // Create profile record
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            first_name: newPatient.firstName,
-            last_name: newPatient.lastName,
-            email: newPatient.email,
-            role: 'patient',
-            status: 'active'
-          });
+      toast({
+        title: "Patient Added",
+        description: `${newPatient.firstName} ${newPatient.lastName} has been added successfully. They will need to reset their password to access the system.`,
+      });
 
-        if (profileError) throw profileError;
-
-        toast({
-          title: "Patient Added",
-          description: `${newPatient.firstName} ${newPatient.lastName} has been added successfully. They will need to reset their password to access the system.`,
-        });
-
-        setNewPatient({
-          firstName: "",
-          lastName: "",
-          email: "",
-          joiningDate: "",
-          patientRecord: ""
-        });
-        setIsAddingPatient(false);
-        queryClient.invalidateQueries({ queryKey: ['patients'] });
-      }
+      setNewPatient({
+        firstName: "",
+        lastName: "",
+        email: "",
+        joiningDate: "",
+        patientRecord: ""
+      });
+      setIsAddingPatient(false);
+      queryClient.invalidateQueries({ queryKey: ['patients'] });
     } catch (error: any) {
       console.error('Error adding patient:', error);
       toast({
