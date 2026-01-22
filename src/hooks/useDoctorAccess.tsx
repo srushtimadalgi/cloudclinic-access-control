@@ -41,19 +41,31 @@ export const useDoctorAccess = () => {
         throw doctorsError;
       }
 
-      // Get saved access preferences from localStorage
-      const savedAccess = localStorage.getItem(`doctor-access-${user?.id}`);
-      const accessData = savedAccess ? JSON.parse(savedAccess) : {};
+      // Get access grants from database (server-side enforcement)
+      const { data: accessGrants, error: accessError } = await supabase
+        .from('doctor_patient_access')
+        .select('doctor_id, access_granted')
+        .eq('patient_id', user?.id);
+
+      if (accessError) {
+        console.error('Error fetching access grants:', accessError);
+        throw accessError;
+      }
+
+      // Build access map from database
+      const accessMap = (accessGrants || []).reduce((acc, grant) => {
+        acc[grant.doctor_id] = grant.access_granted;
+        return acc;
+      }, {} as Record<string, boolean>);
 
       const accessList = doctors?.map(doctor => ({
         doctorId: doctor.id,
         doctorName: `Dr. ${doctor.profiles.first_name} ${doctor.profiles.last_name}`,
         specialty: doctor.specialty,
-        hasAccess: accessData[doctor.id] || false
+        hasAccess: accessMap[doctor.id] || false
       })) || [];
 
       setDoctorAccess(accessList);
-      console.log('Doctor access loaded:', accessList);
     } catch (error) {
       console.error('Error loading doctor access:', error);
       toast({
@@ -68,29 +80,36 @@ export const useDoctorAccess = () => {
 
   const toggleDoctorAccess = async (doctorId: string) => {
     try {
+      const currentAccess = doctorAccess.find(d => d.doctorId === doctorId);
+      const newAccessState = !currentAccess?.hasAccess;
+
+      // Upsert to database (server-side enforcement)
+      const { error } = await supabase
+        .from('doctor_patient_access')
+        .upsert({
+          patient_id: user?.id,
+          doctor_id: doctorId,
+          access_granted: newAccessState
+        }, {
+          onConflict: 'doctor_id,patient_id'
+        });
+
+      if (error) throw error;
+
+      // Update local state only after successful database update
       const updatedAccess = doctorAccess.map(item =>
         item.doctorId === doctorId 
-          ? { ...item, hasAccess: !item.hasAccess }
+          ? { ...item, hasAccess: newAccessState }
           : item
       );
 
       setDoctorAccess(updatedAccess);
-
-      // Save to localStorage
-      const accessData = updatedAccess.reduce((acc, item) => {
-        acc[item.doctorId] = item.hasAccess;
-        return acc;
-      }, {} as Record<string, boolean>);
-
-      localStorage.setItem(`doctor-access-${user?.id}`, JSON.stringify(accessData));
 
       const doctor = updatedAccess.find(d => d.doctorId === doctorId);
       toast({
         title: "Access Updated",
         description: `${doctor?.hasAccess ? 'Granted' : 'Revoked'} access to ${doctor?.doctorName}`,
       });
-
-      console.log('Doctor access updated:', updatedAccess);
     } catch (error) {
       console.error('Error updating doctor access:', error);
       toast({
