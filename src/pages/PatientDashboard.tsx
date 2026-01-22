@@ -26,6 +26,7 @@ import {
   Video
 } from "lucide-react";
 import { JoinVideoCallButton } from "@/components/VideoConsultation";
+import { AIAssistant } from "@/components/AIAssistant";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -881,6 +882,7 @@ const PatientDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+      <AIAssistant />
     </div>
   );
 };
