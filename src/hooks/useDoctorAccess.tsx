@@ -25,16 +25,10 @@ export const useDoctorAccess = () => {
 
   const loadDoctorAccess = async () => {
     try {
-      // Get all active doctors from the database
+      // Get doctors from a non-PII directory (no emails / license numbers)
       const { data: doctors, error: doctorsError } = await supabase
-        .from('doctors')
-        .select(`
-          id,
-          specialty,
-          profiles!inner(first_name, last_name, role, status)
-        `)
-        .eq('profiles.role', 'doctor')
-        .eq('profiles.status', 'active');
+        .from('doctor_directory' as any)
+        .select('doctor_id, first_name, last_name, specialty, verified');
 
       if (doctorsError) {
         console.error('Error fetching doctors:', doctorsError);
@@ -58,11 +52,11 @@ export const useDoctorAccess = () => {
         return acc;
       }, {} as Record<string, boolean>);
 
-      const accessList = doctors?.map(doctor => ({
-        doctorId: doctor.id,
-        doctorName: `Dr. ${doctor.profiles.first_name} ${doctor.profiles.last_name}`,
+      const accessList = (doctors as any[])?.map((doctor) => ({
+        doctorId: doctor.doctor_id,
+        doctorName: `Dr. ${doctor.first_name} ${doctor.last_name}`,
         specialty: doctor.specialty,
-        hasAccess: accessMap[doctor.id] || false
+        hasAccess: accessMap[doctor.doctor_id] || false,
       })) || [];
 
       setDoctorAccess(accessList);
