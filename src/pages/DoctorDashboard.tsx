@@ -147,17 +147,17 @@ const DoctorDashboard = () => {
 
       if (error) throw error;
 
-      // Fetch patient profiles separately
+        // Fetch patient names separately (non-PII directory)
       if (data && data.length > 0) {
         const patientIds = [...new Set(data.map(a => a.patient_id))];
         const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name')
-          .in('id', patientIds);
+            .from('patient_directory' as any)
+            .select('patient_id, first_name, last_name')
+            .in('patient_id', patientIds);
 
         return data.map(appointment => ({
           ...appointment,
-          profiles: profiles?.find(p => p.id === appointment.patient_id)
+            profiles: (profiles as any[])?.find(p => p.patient_id === appointment.patient_id)
         }));
       }
 
@@ -189,17 +189,17 @@ const DoctorDashboard = () => {
 
       if (error) throw error;
 
-      // Fetch patient profiles separately
+        // Fetch patient names separately (non-PII directory)
       if (data && data.length > 0) {
         const patientIds = [...new Set(data.map(p => p.patient_id))];
         const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name')
-          .in('id', patientIds);
+            .from('patient_directory' as any)
+            .select('patient_id, first_name, last_name')
+            .in('patient_id', patientIds);
 
         return data.map(prescription => ({
           ...prescription,
-          profiles: profiles?.find(p => p.id === prescription.patient_id)
+            profiles: (profiles as any[])?.find(p => p.patient_id === prescription.patient_id)
         })) as PrescriptionWithProfile[];
       }
 
@@ -208,20 +208,32 @@ const DoctorDashboard = () => {
     enabled: !!user
   });
 
-  // Fetch patients
+  // Fetch patients this doctor is actually related to (non-PII directory)
   const { data: patients = [], isLoading: patientsLoading } = useQuery({
-    queryKey: ['patients'],
+    queryKey: ['patients', user?.id],
     queryFn: async () => {
+      if (!user) return [];
+
+      const { data: appts, error: apptsError } = await supabase
+        .from('appointments')
+        .select('patient_id')
+        .eq('doctor_id', user.id);
+
+      if (apptsError) throw apptsError;
+      const patientIds = [...new Set((appts || []).map(a => a.patient_id))];
+      if (patientIds.length === 0) return [];
+
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'patient')
+        .from('patient_directory' as any)
+        .select('patient_id, first_name, last_name, status')
+        .in('patient_id', patientIds)
         .eq('status', 'active')
         .order('first_name', { ascending: true });
 
       if (error) throw error;
-      return data;
-    }
+      return data as any[];
+    },
+    enabled: !!user,
   });
 
   // Fetch medical reports that doctor has access to
@@ -244,17 +256,17 @@ const DoctorDashboard = () => {
 
       if (error) throw error;
 
-      // Fetch patient profiles separately
+        // Fetch patient names separately (non-PII directory)
       if (data && data.length > 0) {
         const patientIds = [...new Set(data.map(r => r.patient_id))];
         const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name')
-          .in('id', patientIds);
+            .from('patient_directory' as any)
+            .select('patient_id, first_name, last_name')
+            .in('patient_id', patientIds);
 
         return data.map(report => ({
           ...report,
-          profiles: profiles?.find(p => p.id === report.patient_id)
+            profiles: (profiles as any[])?.find(p => p.patient_id === report.patient_id)
         })) as ReportWithProfile[];
       }
 
@@ -339,28 +351,9 @@ const DoctorDashboard = () => {
       const sanitizedEmail = newAppointment.patientEmail?.trim().toLowerCase() || '';
       const sanitizedNotes = newAppointment.notes.trim();
 
-      // First check if patient exists by email, if not create a temporary ID
-      let patientId = null;
-      
-      if (sanitizedEmail) {
-        const { data: existingPatient } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', sanitizedEmail)
-          .eq('role', 'patient')
-          .single();
-        
-        if (existingPatient) {
-          patientId = existingPatient.id;
-        }
-      }
-
-      // If no patient found, create a placeholder entry
-      if (!patientId) {
-        // Generate a UUID for non-registered patients
-        const tempId = crypto.randomUUID();
-        patientId = tempId;
-      }
+      // NOTE: We no longer look up patients by email here to avoid exposing patient emails.
+      // If the patient is not selected from existing data, we create a placeholder UUID.
+      const patientId = crypto.randomUUID();
 
       // Build notes with sanitized data - use structured format
       const notesContent = sanitizedNotes 
@@ -900,7 +893,7 @@ const DoctorDashboard = () => {
                             </SelectTrigger>
                             <SelectContent>
                               {patients.map(patient => (
-                                <SelectItem key={patient.id} value={patient.id}>
+                                <SelectItem key={patient.patient_id} value={patient.patient_id}>
                                   {patient.first_name} {patient.last_name}
                                 </SelectItem>
                               ))}
@@ -1002,7 +995,7 @@ const DoctorDashboard = () => {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {patients.map((patient) => (
-                    <Card key={patient.id} className="hover:shadow-md transition-shadow">
+                    <Card key={patient.patient_id} className="hover:shadow-md transition-shadow">
                       <CardContent className="p-6">
                         <div className="flex items-center space-x-3">
                           <div className="bg-healthcare-blue p-3 rounded-full">
@@ -1012,7 +1005,6 @@ const DoctorDashboard = () => {
                             <h3 className="font-semibold text-healthcare-text-primary">
                               {patient.first_name} {patient.last_name}
                             </h3>
-                            <p className="text-sm text-healthcare-text-secondary">{patient.email}</p>
                             <Badge variant={patient.status === "active" ? "default" : "secondary"} className="mt-1">
                               {patient.status}
                             </Badge>

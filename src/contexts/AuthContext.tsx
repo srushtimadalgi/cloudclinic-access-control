@@ -95,74 +95,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signIn = async (email: string, password: string) => {
     try {
       cleanupAuthState();
-      
-      // Special handling for admin login
-      if (email === 'nishantus.btech23@rvu.edu.in') {
-        // For admin, we'll create a session manually since they might not be in auth.users
-        const { data: adminProfile, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', email)
-          .eq('role', 'admin')
-          .single();
 
-        if (profileError || !adminProfile) {
-          return { error: { message: 'Admin profile not found' } };
-        }
-
-        // Try to sign in normally first
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          // If normal sign in fails, try to create the admin user
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              data: {
-                first_name: adminProfile.first_name,
-                last_name: adminProfile.last_name,
-                role: 'admin'
-              }
-            }
-          });
-
-          if (signUpError) {
-            return { error: signUpError };
-          }
-
-          // Try to sign in again after creating the user
-          const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-
-          if (retryError) {
-            return { error: retryError };
-          }
-
-          if (retryData.user) {
-            setTimeout(() => {
-              window.location.href = '/admin-dashboard';
-            }, 100);
-          }
-
-          return { error: null };
-        }
-
-        if (data.user) {
-          setTimeout(() => {
-            window.location.href = '/admin-dashboard';
-          }, 100);
-        }
-
-        return { error: null };
-      }
-
-      // Normal sign in for other users
+      // Always use standard Supabase auth; admin access is determined server-side via roles.
       try {
         await supabase.auth.signOut({ scope: 'global' });
       } catch (err) {
