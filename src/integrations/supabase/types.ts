@@ -24,6 +24,9 @@ export type Database = {
           id: string
           notes: string | null
           patient_id: string
+          payment_amount: number | null
+          payment_id: string | null
+          payment_status: string | null
           status: string
           updated_at: string | null
           video_room_id: string | null
@@ -37,6 +40,9 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id: string
+          payment_amount?: number | null
+          payment_id?: string | null
+          payment_status?: string | null
           status?: string
           updated_at?: string | null
           video_room_id?: string | null
@@ -50,6 +56,9 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id?: string
+          payment_amount?: number | null
+          payment_id?: string | null
+          payment_status?: string | null
           status?: string
           updated_at?: string | null
           video_room_id?: string | null
@@ -127,6 +136,7 @@ export type Database = {
       }
       doctors: {
         Row: {
+          consultation_fee: number | null
           created_at: string | null
           id: string
           license_number: string
@@ -134,6 +144,7 @@ export type Database = {
           verified: boolean | null
         }
         Insert: {
+          consultation_fee?: number | null
           created_at?: string | null
           id: string
           license_number: string
@@ -141,6 +152,7 @@ export type Database = {
           verified?: boolean | null
         }
         Update: {
+          consultation_fee?: number | null
           created_at?: string | null
           id?: string
           license_number?: string
