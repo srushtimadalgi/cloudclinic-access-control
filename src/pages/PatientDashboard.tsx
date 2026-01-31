@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import Navigation from "@/components/Navigation";
+import { PaymentDialog } from "@/components/PaymentDialog";
 import { 
   Calendar as CalendarIcon, 
   Shield, 
@@ -23,7 +24,8 @@ import {
   Upload,
   Bell,
   Stethoscope,
-  Video
+  Video,
+  IndianRupee
 } from "lucide-react";
 import { JoinVideoCallButton } from "@/components/VideoConsultation";
 import { AIAssistant } from "@/components/AIAssistant";
@@ -50,6 +52,14 @@ const PatientDashboard = () => {
   const [uploadDialog, setUploadDialog] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
+  
+  // Payment dialog state
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<{
+    id: string;
+    doctorName: string;
+    amount: number;
+  } | null>(null);
 
   // Fetch all doctors with real-time updates (no verification required)
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
@@ -102,8 +112,11 @@ const PatientDashboard = () => {
           notes,
           doctor_id,
           consultation_type,
+          payment_status,
+          payment_amount,
           doctors!inner(
             specialty,
+            consultation_fee,
             profiles!inner(first_name, last_name)
           )
         `)
@@ -546,56 +559,96 @@ const PatientDashboard = () => {
                       <TableHead>Type</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Payment</TableHead>
                       <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {appointments.map((appointment: any) => (
-                      <TableRow key={appointment.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">
-                              Dr. {appointment.doctors.profiles.first_name} {appointment.doctors.profiles.last_name}
+                    {appointments.map((appointment: any) => {
+                      const needsPayment = 
+                        appointment.consultation_type === 'video' && 
+                        appointment.status === 'confirmed' && 
+                        appointment.payment_status !== 'paid';
+                      const doctorName = `Dr. ${appointment.doctors.profiles.first_name} ${appointment.doctors.profiles.last_name}`;
+                      const consultationFee = appointment.doctors.consultation_fee || 50000; // Default ₹500
+
+                      return (
+                        <TableRow key={appointment.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{doctorName}</div>
+                              <div className="text-sm text-healthcare-text-secondary">{appointment.doctors.specialty}</div>
                             </div>
-                            <div className="text-sm text-healthcare-text-secondary">{appointment.doctors.specialty}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
-                        <TableCell>{appointment.appointment_time}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            {appointment.consultation_type === 'video' ? (
-                              <Badge variant="outline" className="gap-1 border-healthcare-blue text-healthcare-blue">
-                                <Video className="h-3 w-3" />
-                                Video
+                          </TableCell>
+                          <TableCell>{new Date(appointment.appointment_date).toLocaleDateString()}</TableCell>
+                          <TableCell>{appointment.appointment_time}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              {appointment.consultation_type === 'video' ? (
+                                <Badge variant="outline" className="gap-1 border-healthcare-blue text-healthcare-blue">
+                                  <Video className="h-3 w-3" />
+                                  Video
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">In-Person</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{appointment.notes}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              {getStatusIcon(appointment.status)}
+                              <Badge className={getStatusColor(appointment.status)}>
+                                {appointment.status}
                               </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {appointment.consultation_type === 'video' ? (
+                              appointment.payment_status === 'paid' ? (
+                                <Badge className="bg-green-500 gap-1">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Paid
+                                </Badge>
+                              ) : needsPayment ? (
+                                <Button
+                                  size="sm"
+                                  className="gap-1"
+                                  onClick={() => {
+                                    setSelectedAppointmentForPayment({
+                                      id: appointment.id,
+                                      doctorName,
+                                      amount: consultationFee,
+                                    });
+                                    setPaymentDialogOpen(true);
+                                  }}
+                                >
+                                  <IndianRupee className="h-3 w-3" />
+                                  Pay ₹{consultationFee / 100}
+                                </Button>
+                              ) : (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  Pending
+                                </Badge>
+                              )
                             ) : (
-                              <Badge variant="outline">In-Person</Badge>
+                              <span className="text-sm text-muted-foreground">N/A</span>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell>{appointment.notes}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            {getStatusIcon(appointment.status)}
-                            <Badge className={getStatusColor(appointment.status)}>
-                              {appointment.status}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <JoinVideoCallButton
-                            appointmentId={appointment.id}
-                            consultationType={appointment.consultation_type || 'in-person'}
-                            status={appointment.status}
-                            participantName={`${profile?.first_name} ${profile?.last_name}`}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell>
+                            <JoinVideoCallButton
+                              appointmentId={appointment.id}
+                              consultationType={appointment.consultation_type || 'in-person'}
+                              status={appointment.status}
+                              participantName={`${profile?.first_name} ${profile?.last_name}`}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {appointments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-healthcare-text-secondary">
+                        <TableCell colSpan={8} className="text-center py-8 text-healthcare-text-secondary">
                           No appointments found
                         </TableCell>
                       </TableRow>
@@ -883,6 +936,21 @@ const PatientDashboard = () => {
         </Tabs>
       </div>
       <AIAssistant />
+      
+      {/* Payment Dialog */}
+      {selectedAppointmentForPayment && (
+        <PaymentDialog
+          open={paymentDialogOpen}
+          onOpenChange={setPaymentDialogOpen}
+          appointmentId={selectedAppointmentForPayment.id}
+          doctorName={selectedAppointmentForPayment.doctorName}
+          amount={selectedAppointmentForPayment.amount}
+          onPaymentSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+            setSelectedAppointmentForPayment(null);
+          }}
+        />
+      )}
     </div>
   );
 };
