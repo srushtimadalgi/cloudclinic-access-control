@@ -61,38 +61,35 @@ const PatientDashboard = () => {
     amount: number;
   } | null>(null);
 
-  // Fetch all doctors with real-time updates (no verification required)
+  // Fetch all doctors from doctor_directory (public read access)
   const { data: allDoctors, isLoading: doctorsLoading } = useQuery({
     queryKey: ['all-doctors'],
     queryFn: async () => {
-      console.log('PatientDashboard: Fetching all doctors...');
+      console.log('PatientDashboard: Fetching all doctors from directory...');
       const { data, error } = await supabase
-        .from('doctors')
-        .select(`
-          id,
-          specialty,
-          license_number,
-          profiles!inner(
-            id,
-            first_name, 
-            last_name, 
-            status,
-            email
-          )
-        `)
-        .eq('profiles.status', 'active')
-        .order('id', { ascending: true });
+        .from('doctor_directory')
+        .select('doctor_id, first_name, last_name, specialty, verified')
+        .order('first_name', { ascending: true });
 
       if (error) {
         console.error('Error fetching doctors:', error);
         throw error;
       }
       
-      console.log('PatientDashboard: Fetched doctors count:', data?.length || 0);
-      console.log('PatientDashboard: Fetched doctors:', data);
-      return data;
+      // Transform to match expected structure
+      const transformedData = data?.map(doc => ({
+        id: doc.doctor_id,
+        specialty: doc.specialty,
+        profiles: {
+          first_name: doc.first_name,
+          last_name: doc.last_name
+        }
+      })) || [];
+      
+      console.log('PatientDashboard: Fetched doctors count:', transformedData.length);
+      return transformedData;
     },
-    refetchInterval: false, // Remove automatic refetch to prevent redirect loops
+    refetchInterval: false,
     refetchIntervalInBackground: false
   });
 
@@ -830,16 +827,8 @@ const PatientDashboard = () => {
                                 Dr. {doctor.profiles.first_name} {doctor.profiles.last_name}
                               </h3>
                               <p className="text-healthcare-text-secondary font-medium">{doctor.specialty}</p>
-                              <p className="text-xs text-healthcare-text-secondary mt-1">
-                                License: {doctor.license_number}
-                              </p>
-                              <p className="text-xs text-healthcare-text-secondary">
-                                {doctor.profiles.email}
-                              </p>
                               <div className="flex items-center space-x-2 mt-2">
-                                <Badge variant={doctor.profiles.status === "active" ? "success" : "secondary"}>
-                                  {doctor.profiles.status}
-                                </Badge>
+                                <Badge variant="default">Available</Badge>
                               </div>
                             </div>
                           </div>
