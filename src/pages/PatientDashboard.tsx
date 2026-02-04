@@ -99,7 +99,8 @@ const PatientDashboard = () => {
     queryFn: async () => {
       if (!user) return [];
       
-      const { data, error } = await supabase
+      // First fetch appointments
+      const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
           id,
@@ -110,18 +111,43 @@ const PatientDashboard = () => {
           doctor_id,
           consultation_type,
           payment_status,
-          payment_amount,
-          doctors!inner(
-            specialty,
-            consultation_fee,
-            profiles!inner(first_name, last_name)
-          )
+          payment_amount
         `)
         .eq('patient_id', user.id)
         .order('appointment_date', { ascending: false });
 
-      if (error) throw error;
-      return data;
+      if (appointmentsError) throw appointmentsError;
+      if (!appointmentsData || appointmentsData.length === 0) return [];
+
+      // Fetch doctor info from doctor_directory (public access)
+      const doctorIds = [...new Set(appointmentsData.map(a => a.doctor_id))];
+      const { data: doctorData } = await supabase
+        .from('doctor_directory')
+        .select('doctor_id, first_name, last_name, specialty')
+        .in('doctor_id', doctorIds);
+
+      // Fetch consultation fees from doctors table (if accessible) - fallback to default
+      const { data: doctorFees } = await supabase
+        .from('doctors')
+        .select('id, consultation_fee')
+        .in('id', doctorIds);
+
+      // Merge data
+      return appointmentsData.map(appointment => {
+        const doctor = doctorData?.find(d => d.doctor_id === appointment.doctor_id);
+        const fees = doctorFees?.find(d => d.id === appointment.doctor_id);
+        return {
+          ...appointment,
+          doctors: {
+            specialty: doctor?.specialty || 'General',
+            consultation_fee: fees?.consultation_fee || 50000,
+            profiles: {
+              first_name: doctor?.first_name || 'Unknown',
+              last_name: doctor?.last_name || 'Doctor'
+            }
+          }
+        };
+      });
     },
     enabled: !!user
   });
